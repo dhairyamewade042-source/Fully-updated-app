@@ -56,8 +56,9 @@ export default function NewSaleScreen() {
   const q = parseFloat(quantity) || 0;
   const p = parseFloat(price) || 0;
   const total = +(q * p).toFixed(2);
-  const r = Math.max(0, Math.min(parseFloat(received) || 0, total));
-  const remaining = +(total - r).toFixed(2);
+  const r = Math.max(0, parseFloat(received) || 0);
+  const remaining = +Math.max(0, total - r).toFixed(2);
+  const advance = +Math.max(0, r - total).toFixed(2);
 
   const paymentStatus =
     total <= 0
@@ -96,9 +97,11 @@ export default function NewSaleScreen() {
         received: r,
       });
       const msg =
-        remaining > 0.0001
-          ? `Sale saved. ${money(remaining, currency)} added to pending.`
-          : "Sale saved. Fully paid ✓";
+        advance > 0.0001
+          ? `Sale saved. Fully paid ✓ ${money(advance, currency)} saved as advance.`
+          : remaining > 0.0001
+            ? `Sale saved. ${money(remaining, currency)} added to pending.`
+            : "Sale saved. Fully paid ✓";
       showToast(msg, "success");
       // reset form
       setCustomerName("");
@@ -294,7 +297,26 @@ export default function NewSaleScreen() {
                 </Text>
               </View>
             </View>
-            {remaining > 0.0001 ? (
+            {advance > 0.0001 ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: spacing.sm,
+                }}
+              >
+                <Body muted style={{ flex: 1 }}>
+                  Fully paid — extra saved as Advance Balance.
+                </Body>
+                <Text
+                  testID="sale-advance"
+                  style={{ color: theme.brandPrimary, fontWeight: "800", fontSize: fontSize.lg }}
+                >
+                  +{money(advance, currency)}
+                </Text>
+              </View>
+            ) : remaining > 0.0001 ? (
               <Body muted style={{ marginTop: spacing.sm }}>
                 This customer will be added to Pending Payments automatically.
               </Body>

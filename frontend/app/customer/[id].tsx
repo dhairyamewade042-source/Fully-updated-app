@@ -74,7 +74,7 @@ const BillEditor = ({
   const q = parseFloat(qty) || 0;
   const p = parseFloat(price) || 0;
   const total = +(q * p).toFixed(2);
-  const r = Math.max(0, Math.min(parseFloat(received) || 0, total));
+  const r = Math.max(0, parseFloat(received) || 0);
   const canSave = q > 0 && p > 0;
 
   const submit = async () => {
@@ -312,6 +312,8 @@ export default function CustomerDetailScreen() {
     customerBills,
     customerPayments,
     customerBalance,
+    customerAdvance,
+    customerAdvanceHistory,
     updateCustomer,
     deleteCustomer,
     addSale,
@@ -351,6 +353,8 @@ export default function CustomerDetailScreen() {
   }
 
   const pending = customerBalance(customer.id);
+  const advance = customerAdvance(customer.id);
+  const advanceHistory = customerAdvanceHistory(customer.id);
   const totalPurchased = bills.reduce((a, b) => a + b.total, 0);
   const totalReceived = totalPurchased - pending;
   const totalQty = bills.reduce((a, b) => a + b.quantityKg, 0);
@@ -485,6 +489,55 @@ export default function CustomerDetailScreen() {
                 {money(totalReceived, currency)}
               </Text>
             </View>
+          </View>
+        </Card>
+
+        {/* Advance balance */}
+        <Card
+          testID="customer-advance-card"
+          style={{
+            marginTop: spacing.md,
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: advance > 0 ? theme.brandTertiary : theme.surfaceSecondary,
+            borderColor: advance > 0 ? theme.brandSecondary : theme.border,
+          }}
+        >
+          <View
+            style={{
+              height: 44,
+              width: 44,
+              borderRadius: radius.pill,
+              backgroundColor: advance > 0 ? theme.brandPrimary : theme.border,
+              alignItems: "center",
+              justifyContent: "center",
+              marginRight: spacing.md,
+            }}
+          >
+            <MaterialCommunityIcons
+              name="wallet-plus"
+              size={22}
+              color={advance > 0 ? "#FFF" : theme.muted}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Label>Advance Balance</Label>
+            <Text
+              testID="customer-advance"
+              style={{
+                color: advance > 0 ? theme.onBrandTertiary : theme.onSurface,
+                fontSize: fontSize.xxl,
+                fontWeight: "800",
+                marginTop: 2,
+              }}
+            >
+              {money(advance, currency)}
+            </Text>
+            <Text style={{ color: theme.muted, fontSize: fontSize.xs, marginTop: 2 }}>
+              {advance > 0
+                ? "Auto-applied to the next bill"
+                : "Extra payments are saved here automatically"}
+            </Text>
           </View>
         </Card>
 
@@ -668,6 +721,74 @@ export default function CustomerDetailScreen() {
             </Pressable>
           ))
         )}
+
+        {/* Advance history */}
+        {advanceHistory.length > 0 ? (
+          <>
+            <View style={{ marginTop: spacing.xl }}>
+              <Label>Advance History</Label>
+            </View>
+            {advanceHistory
+              .slice()
+              .reverse()
+              .map((h) => {
+                const relBill = h.saleId ? bills.find((b) => b.id === h.saleId) : undefined;
+                const isAdded = h.type === "added";
+                const desc = isAdded
+                  ? h.paymentId
+                    ? "Added from payment"
+                    : relBill
+                      ? `Added from overpaid bill (${fmtDate(relBill.date)})`
+                      : "Advance added"
+                  : relBill
+                    ? `Used on bill (${fmtDate(relBill.date)})`
+                    : "Advance used on a bill";
+                return (
+                  <Card
+                    key={h.id}
+                    testID={`advance-row-${h.id}`}
+                    style={{ marginTop: spacing.sm, flexDirection: "row", alignItems: "center" }}
+                  >
+                    <View
+                      style={{
+                        height: 36,
+                        width: 36,
+                        borderRadius: radius.pill,
+                        backgroundColor: isAdded ? theme.brandTertiary : "#FFF3CD",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        marginRight: spacing.md,
+                      }}
+                    >
+                      <MaterialCommunityIcons
+                        name={isAdded ? "wallet-plus" : "cash-minus"}
+                        size={18}
+                        color={isAdded ? theme.brandPrimary : "#8A5A00"}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: theme.onSurface, fontSize: fontSize.md, fontWeight: "700" }}>
+                        {desc}
+                      </Text>
+                      <Text style={{ color: theme.muted, fontSize: fontSize.sm, marginTop: 2 }}>
+                        {fmtDate(h.date)}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        color: isAdded ? theme.brandPrimary : "#8A5A00",
+                        fontSize: fontSize.lg,
+                        fontWeight: "800",
+                      }}
+                    >
+                      {isAdded ? "+" : "-"}
+                      {money(h.amount, currency)}
+                    </Text>
+                  </Card>
+                );
+              })}
+          </>
+        ) : null}
 
         <Body muted style={{ marginTop: spacing.lg, fontSize: fontSize.sm, textAlign: "center" }}>
           Tap any bill or payment to edit or delete it.

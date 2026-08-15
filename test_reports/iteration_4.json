@@ -1,0 +1,65 @@
+{
+  "summary": "End-to-end frontend testing of Advance Balance feature on GarlicLedger Pro (RN-Web on Expo). All 4 advance scenarios (A/B/C/D), the FIFO regression case, and the Day Report advance stats + PDF export were exercised on the live preview URL with a freshly cleared IndexedDB. All arithmetic matches the spec exactly, no uncaught JS errors, only benign RN-Web deprecation warnings (props.pointerEvents, useNativeDriver).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Customer profile — Advance History (used rows)", "issues": ["Icon name 'wallet-minus' does not exist in MaterialCommunityIcons -> rendered as '?' glyph in Advance History rows of type 'used'. Fixed by testing agent (changed to 'cash-minus')."]}
+    ]
+  },
+  "scenario_results": {
+    "A_overpay_on_new_sale": {
+      "preview": {"total": "\u20b9120", "status": "Paid", "sale-advance": "+\u20b930"},
+      "profile": {"customer-pending": "\u20b90", "customer-advance": "\u20b930", "bill_status": "PAID", "advance_history": ["+\u20b930 Added from overpaid bill"]},
+      "pass": true
+    },
+    "B_advance_auto_applied_next_bill": {
+      "first_sale": "AdvTestB 1x50 received 100 -> +\u20b950 advance, bill PAID",
+      "second_sale_preview": {"total": "\u20b9120", "status": "Unpaid", "sale-advance": null},
+      "profile_after_second": {"customer-pending": "\u20b970", "customer-advance": "\u20b90", "bills": ["\u20b950 PAID", "\u20b9120 Pending \u20b970"], "advance_history": ["-\u20b950 Used on bill", "+\u20b950 Added from overpaid bill"]},
+      "pass": true
+    },
+    "C_advance_larger_than_bill": {
+      "first_sale": "AdvTestC 1x100 received 300 -> +\u20b9200 advance, bill PAID",
+      "second_sale_preview": {"total": "\u20b9120", "status": "Unpaid"},
+      "profile_after_second": {"customer-pending": "\u20b90", "customer-advance": "\u20b980", "bills": ["\u20b9100 PAID", "\u20b9120 PAID"], "advance_history": ["-\u20b9120 Used", "+\u20b9200 Added"]},
+      "pass": true
+    },
+    "D_overpay_via_receive_payment": {
+      "setup": "AdvTestD 1x200 received 0 -> pending \u20b9200",
+      "receive_preview": {"receive-advance": "+\u20b950"},
+      "profile_after_confirm": {"customer-pending": "\u20b90", "customer-advance": "\u20b950", "bill": "\u20b9200 PAID", "advance_history": ["+\u20b950 Added from payment"]},
+      "pass": true
+    },
+    "REG_fifo_unaffected": {
+      "sales": ["\u20b9100 received 0", "\u20b950 received 50"],
+      "profile": {"customer-pending": "\u20b9100", "customer-advance": "\u20b90", "bills": ["\u20b9100 Pending \u20b9100", "\u20b950 PAID"], "advance_history": []},
+      "pass": true,
+      "note": "Own-bill payment stays on own bill; no phantom advance."
+    },
+    "day_report": {
+      "advance_added_stat": "\u20b9330 (30+50+200+50)",
+      "advance_used_stat": "\u20b9170 (50+120)",
+      "export_pdf": "window.print called successfully (1 invocation), no JS errors",
+      "pass": true
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ledger.ts is a clean, pure engine — good separation of concerns and FIFO invariants; keeps rounding to 2 decimals with EPS tolerance.",
+    "Fixed: customer/[id].tsx used MaterialCommunityIcons name 'wallet-minus' which is not in the glyphmap -> rendered as '?'. Changed to 'cash-minus'. Consider auditing other icon names similarly.",
+    "sale.tsx correctly no longer clamps received to total; sale-advance preview and sale-status update reactively.",
+    "receive-payment/[customerId].tsx shows receive-advance preview correctly for overpay.",
+    "Day Report stats grid now includes Advance Added / Advance Used derived from history entries dated on the selected day — verified visually and via innerText."
+  ],
+  "updated_files": ["/app/frontend/app/customer/[id].tsx"],
+  "success_rate": {"backend": "N/A (no backend)", "frontend": "100%"},
+  "test_credentials": "N/A - no auth",
+  "seed_data_creation": "Created via UI in a freshly cleared IndexedDB: AdvTestA (1 sale), AdvTestB (2 sales), AdvTestC (2 sales), AdvTestD (1 sale + 1 payment), RegTest (2 sales). Data lives only inside the Playwright browser context.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Feature is production-ready. Key testids used: sale-customer, sale-quantity, sale-price, sale-received, sale-total, sale-status, sale-advance, sale-save, customer-pending, customer-advance, customer-advance-card, bill-row-<id>, advance-row-<id>, customer-receive-payment, receive-amount, receive-advance, confirm-payment, dashboard-hero-press, day-report-screen, day-report-export-pdf, tab-home/tab-sale/tab-more, more-customers. Field component places data-testid on the TextInput itself (NOT a wrapper), so selectors are '[data-testid=\"sale-customer\"]' with no ' input' subselector. Navigation between screens works reliably via page.goto to /sale, /, and /customer/<id>; tab bar only renders on tabs routes so clicking tab-sale while on customer profile times out. For PDF export intercept window.print BEFORE clicking export.",
+  "rca of the issue": "N/A - only one minor cosmetic icon issue found and fixed."
+}

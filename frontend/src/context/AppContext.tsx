@@ -27,6 +27,7 @@ import {
   TraderBill,
 } from "@/src/lib/types";
 import { darkTheme, lightTheme, Theme } from "@/src/lib/theme";
+import { AdvanceEntry, computeCustomerLedger } from "@/src/lib/ledger";
 
 interface AddSaleInput {
   customerName: string;
@@ -47,6 +48,8 @@ interface Ctx {
   customerBills: (customerId: string) => Sale[]; // sorted oldest first
   pendingBills: (customerId: string) => Sale[]; // sorted oldest first (pending > 0)
   customerPayments: (customerId: string) => Payment[];
+  customerAdvance: (customerId: string) => number;
+  customerAdvanceHistory: (customerId: string) => AdvanceEntry[];
   totals: () => {
     todaySales: number;
     todayQuantity: number;
@@ -105,68 +108,24 @@ const AppCtx = createContext<Ctx | null>(null);
 // ------------------------------------------------------------
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-// Recompute `sale.received` and `payment.appliedTo` for a customer.
-// Rule:
-//   1. Each sale.received starts at sale.initialReceived.
-//   2. Payments are applied in chronological order (oldest first).
-//   3. Each payment is allocated FIFO across the customer's unpaid sales
-//      (oldest sale first).
+// Recompute `sale.received` and `payment.appliedTo` for a customer using the
+// advance-aware ledger engine (FIFO oldest-first; overpayment becomes advance
+// credit that auto-applies to future bills). See src/lib/ledger.ts.
 const rebuildCustomerLedger = (prev: AppData, customerId: string): AppData => {
-  const sales = prev.sales.slice();
-  const payments = prev.payments.slice();
-
-  // Reset received on all sales of this customer.
-  for (let i = 0; i < sales.length; i++) {
-    if (sales[i].customerId === customerId) {
-      sales[i] = {
-        ...sales[i],
-        received: Math.min(sales[i].initialReceived, sales[i].total),
-      };
-    }
-  }
-  // Clear all appliedTo arrays of this customer's payments.
-  for (let i = 0; i < payments.length; i++) {
-    if (payments[i].customerId === customerId) {
-      payments[i] = { ...payments[i], appliedTo: [] };
-    }
-  }
-
-  // Sorted references (do not mutate the original array positions).
-  const customerPaymentIdxs = payments
-    .map((p, i) => ({ p, i }))
-    .filter(({ p }) => p.customerId === customerId)
-    .sort(
-      (a, b) =>
-        a.p.date.localeCompare(b.p.date) || a.p.createdAt.localeCompare(b.p.createdAt),
-    )
-    .map(({ i }) => i);
-
-  const customerSaleIdxs = sales
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => s.customerId === customerId)
-    .sort(
-      (a, b) =>
-        a.s.date.localeCompare(b.s.date) || a.s.createdAt.localeCompare(b.s.createdAt),
-    )
-    .map(({ i }) => i);
-
-  for (const pIdx of customerPaymentIdxs) {
-    let remaining = payments[pIdx].amount;
-    const applied: { saleId: string; amount: number }[] = [];
-    for (const sIdx of customerSaleIdxs) {
-      if (remaining <= 0.0001) break;
-      const s = sales[sIdx];
-      const owed = s.total - s.received;
-      if (owed <= 0.0001) continue;
-      const take = Math.min(owed, remaining);
-      sales[sIdx] = { ...s, received: round2(s.received + take) };
-      applied.push({ saleId: s.id, amount: round2(take) });
-      remaining = round2(remaining - take);
-    }
-    payments[pIdx] = { ...payments[pIdx], appliedTo: applied };
-  }
-
-  return { ...prev, sales, payments };
+  const custSales = prev.sales.filter((s) => s.customerId === customerId);
+  const custPayments = prev.payments.filter((p) => p.customerId === customerId);
+  const { received, appliedTo } = computeCustomerLedger(custSales, custPayments);
+  return {
+    ...prev,
+    sales: prev.sales.map((s) =>
+      s.customerId === customerId && received[s.id] !== undefined
+        ? { ...s, received: received[s.id] }
+        : s,
+    ),
+    payments: prev.payments.map((p) =>
+      p.customerId === customerId ? { ...p, appliedTo: appliedTo[p.id] || [] } : p,
+    ),
+  };
 };
 
 const upsertCustomerByNameSync = (
@@ -254,6 +213,24 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     [data.sales],
   );
 
+  const customerAdvance = useCallback(
+    (customerId: string) => {
+      const s = data.sales.filter((x) => x.customerId === customerId);
+      const p = data.payments.filter((x) => x.customerId === customerId);
+      return computeCustomerLedger(s, p).advance;
+    },
+    [data.sales, data.payments],
+  );
+
+  const customerAdvanceHistory = useCallback(
+    (customerId: string) => {
+      const s = data.sales.filter((x) => x.customerId === customerId);
+      const p = data.payments.filter((x) => x.customerId === customerId);
+      return computeCustomerLedger(s, p).history;
+    },
+    [data.sales, data.payments],
+  );
+
   const totals = useCallback(() => {
     const today = dayjs().format("YYYY-MM-DD");
     const tomorrow = dayjs().add(1, "day").format("YYYY-MM-DD");
@@ -332,7 +309,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const addSale = useCallback<Ctx["addSale"]>(
     async ({ customerName, phone, date, quantityKg, pricePerKg, received }) => {
       const total = round2(quantityKg * pricePerKg);
-      const receivedClamped = Math.max(0, Math.min(received, total));
+      const receivedInput = round2(Math.max(0, received));
       const now = new Date().toISOString();
       let sale: Sale = {} as Sale;
       await commit((prev) => {
@@ -345,8 +322,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
           quantityKg,
           pricePerKg,
           total,
-          initialReceived: receivedClamped,
-          received: receivedClamped,
+          initialReceived: receivedInput,
+          received: receivedInput,
           createdAt: now,
         };
         const withSale: AppData = { ...withCustomer, sales: [...withCustomer.sales, sale] };
@@ -373,10 +350,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
             : target.total;
         const nextInitial = Math.max(
           0,
-          Math.min(
-            patch.initialReceived !== undefined ? patch.initialReceived : target.initialReceived,
-            nextTotal,
-          ),
+          patch.initialReceived !== undefined ? patch.initialReceived : target.initialReceived,
         );
         const nextSales = prev.sales.map((s) =>
           s.id === id
@@ -684,6 +658,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       customerBills,
       pendingBills,
       customerPayments,
+      customerAdvance,
+      customerAdvanceHistory,
       totals,
       upsertCustomerByName,
       updateCustomer,
@@ -717,6 +693,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       customerBills,
       pendingBills,
       customerPayments,
+      customerAdvance,
+      customerAdvanceHistory,
       totals,
       upsertCustomerByName,
       updateCustomer,

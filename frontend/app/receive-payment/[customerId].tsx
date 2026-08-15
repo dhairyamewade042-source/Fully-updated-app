@@ -57,6 +57,7 @@ export default function ReceivePaymentScreen() {
   }, [bills, value]);
 
   const remainingAfter = Math.max(0, pending - value);
+  const advanceAfter = Math.max(0, value - pending);
 
   if (!customer) {
     return (
@@ -69,14 +70,18 @@ export default function ReceivePaymentScreen() {
     );
   }
 
-  const canSave = value > 0 && value <= pending + 0.0001;
+  const canSave = value > 0;
 
   const onSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
     try {
       await receivePayment(customer.id, value);
-      showToast(`Payment of ${money(value, currency)} received`, "success");
+      const msg =
+        advanceAfter > 0.0001
+          ? `Payment received. ${money(advanceAfter, currency)} saved as advance.`
+          : `Payment of ${money(value, currency)} received`;
+      showToast(msg, "success");
       router.back();
     } finally {
       setSaving(false);
@@ -229,6 +234,29 @@ export default function ReceivePaymentScreen() {
                   {money(remainingAfter, currency)}
                 </Text>
               </View>
+              {advanceAfter > 0.0001 ? (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    paddingTop: spacing.sm,
+                    marginTop: spacing.sm,
+                    borderTopWidth: 1,
+                    borderTopColor: theme.divider,
+                  }}
+                >
+                  <Text style={{ color: theme.onSurface, fontWeight: "800", fontSize: fontSize.md }}>
+                    Saved as advance
+                  </Text>
+                  <Text
+                    testID="receive-advance"
+                    style={{ color: theme.brandPrimary, fontWeight: "800", fontSize: fontSize.md }}
+                  >
+                    +{money(advanceAfter, currency)}
+                  </Text>
+                </View>
+              ) : null}
             </Card>
           ) : (
             <Body muted style={{ marginTop: spacing.sm }}>
