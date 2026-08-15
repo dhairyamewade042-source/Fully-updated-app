@@ -465,20 +465,30 @@ export default function CustomerDetailScreen() {
         <path d="M40 20 C43 33 43 47 38 57" stroke="#1B5E20" stroke-width="1.4" fill="none"/>
       </svg>`;
 
+    const balClass = (n: number) =>
+      n > 0.0001 ? "bal-dr" : n < -0.0001 ? "bal-cr" : "";
+
     const rowsHtml =
       ledgerRows.length === 0
-        ? `<tr><td colspan="7" class="empty">No transactions in this period.</td></tr>`
+        ? `<tr><td colspan="6" class="empty">No transactions in this period.</td></tr>`
         : ledgerRows
             .map((r) => {
               const isCredit = r.credit > 0.0001;
+              const debitCell =
+                r.debit > 0.0001
+                  ? `<td class="num c-debit">${money(r.debit, currency)}</td>`
+                  : `<td class="num muted">—</td>`;
+              const creditCell =
+                r.credit > 0.0001
+                  ? `<td class="num c-credit">${money(r.credit, currency)}</td>`
+                  : `<td class="num muted">—</td>`;
               return `<tr>
                 <td class="c-date">${fmtDate(r.date)}</td>
-                <td class="c-part">${escapeHtml(r.particulars)}</td>
                 <td class="c-qty">${r.qty ? escapeHtml(r.qty) : "—"}</td>
-                <td class="num c-debit">${r.debit > 0.0001 ? money(r.debit, currency) : "—"}</td>
-                <td class="num c-credit">${r.credit > 0.0001 ? money(r.credit, currency) : "—"}</td>
-                <td class="c-drcr">${isCredit ? "Cr." : "Dr."}</td>
-                <td class="num c-bal">${balCell(r.balance)}</td>
+                ${debitCell}
+                ${creditCell}
+                <td class="c-drcr ${isCredit ? "cc-cr" : "cc-dr"}">${isCredit ? "Cr." : "Dr."}</td>
+                <td class="num c-bal ${balClass(r.balance)}">${balCell(r.balance)}</td>
               </tr>`;
             })
             .join("");
@@ -486,42 +496,42 @@ export default function CustomerDetailScreen() {
     return `<!DOCTYPE html><html><head><meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <style>
-        @page { size: A4; margin: 14mm 12mm 16mm 12mm; }
+        @page { size: 100mm 170mm; margin: 6mm 5mm 7mm 5mm; }
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; }
         body {
           font-family: "Helvetica Neue", Helvetica, Arial, "Segoe UI", Roboto, sans-serif;
-          color: #1E2B22; font-size: 12px; line-height: 1.45;
+          color: #1E2B22; font-size: 10px; line-height: 1.4;
           -webkit-print-color-adjust: exact; print-color-adjust: exact;
         }
-        .sheet { max-width: 800px; margin: 0 auto; }
+        .sheet { width: 100%; margin: 0 auto; }
 
         /* Letterhead */
-        .letterhead { text-align: center; padding-bottom: 12px; border-bottom: 2.5px solid #1B5E20; }
+        .letterhead { text-align: center; padding-bottom: 8px; border-bottom: 2px solid #1B5E20; }
         .badge-logo {
-          width: 56px; height: 56px; border-radius: 50%; background: #1B5E20;
-          display: inline-flex; align-items: center; justify-content: center; margin-bottom: 6px;
+          width: 42px; height: 42px; border-radius: 50%; background: #1B5E20;
+          display: inline-flex; align-items: center; justify-content: center; margin-bottom: 4px;
         }
-        .biz-name { font-size: 26px; font-weight: 800; color: #1B5E20; letter-spacing: 2px; }
-        .biz-tag { font-size: 12px; color: #4B5A4F; letter-spacing: .5px; margin-top: 2px; }
-        .biz-contact { font-size: 11px; color: #4B5A4F; margin-top: 6px; }
-        .biz-contact span { margin: 0 6px; }
+        .biz-name { font-size: 19px; font-weight: 800; color: #1B5E20; letter-spacing: 1.5px; }
+        .biz-tag { font-size: 10px; color: #4B5A4F; letter-spacing: .3px; margin-top: 1px; }
+        .biz-contact { font-size: 9px; color: #4B5A4F; margin-top: 4px; line-height: 1.5; }
+        .biz-contact span { display: block; }
 
         .doc-title {
-          text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 3px;
+          text-align: center; font-size: 10px; font-weight: 700; letter-spacing: 2px;
           text-transform: uppercase; color: #1B5E20; background: #EAF3EC;
-          padding: 6px 0; margin: 14px 0 16px; border-radius: 4px;
+          padding: 4px 0; margin: 10px 0 10px; border-radius: 4px;
         }
 
-        /* Customer + summary blocks */
-        .cols { display: flex; gap: 14px; margin-bottom: 16px; }
-        .block { flex: 1; border: 1px solid #D6E2D9; border-radius: 6px; overflow: hidden; }
+        /* Customer + summary blocks (stacked for mobile) */
+        .cols { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+        .block { border: 1px solid #D6E2D9; border-radius: 6px; overflow: hidden; }
         .block .bhead {
-          background: #1B5E20; color: #fff; font-size: 10.5px; font-weight: 700;
-          letter-spacing: 1px; text-transform: uppercase; padding: 6px 10px;
+          background: #1B5E20; color: #fff; font-size: 9px; font-weight: 700;
+          letter-spacing: .8px; text-transform: uppercase; padding: 5px 8px;
         }
-        .block .bbody { padding: 8px 10px; background: #fff; }
-        .kv { display: flex; justify-content: space-between; padding: 3px 0; }
+        .block .bbody { padding: 6px 8px; background: #fff; }
+        .kv { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
         .kv .k { color: #5C6B5F; }
         .kv .v { font-weight: 700; color: #1E2B22; text-align: right; }
         .kv .v.dr { color: #B3261E; }
@@ -529,38 +539,42 @@ export default function CustomerDetailScreen() {
         .summary .bbody { background: #F5F8F5; }
 
         /* Ledger table */
-        table.ledger { width: 100%; border-collapse: collapse; }
+        table.ledger { width: 100%; border-collapse: collapse; table-layout: fixed; }
         table.ledger thead th {
-          background: #1B5E20; color: #fff; font-size: 10.5px; font-weight: 700;
-          text-transform: uppercase; letter-spacing: .4px; padding: 8px 8px;
+          background: #1B5E20; color: #fff; font-size: 8.5px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: .2px; padding: 5px 4px;
           border: 1px solid #145018; text-align: left;
         }
         table.ledger tbody td {
-          padding: 7px 8px; border: 1px solid #D6E2D9; font-size: 11.5px; vertical-align: top;
+          padding: 5px 4px; border: 1px solid #D6E2D9; font-size: 9px; vertical-align: top;
+          word-break: break-word;
         }
         table.ledger tbody tr:nth-child(even) td { background: #F5F8F5; }
-        table.ledger .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        table.ledger .num { text-align: right; font-variant-numeric: tabular-nums; }
         table.ledger th.num { text-align: right; }
         table.ledger .c-qty, table.ledger th.c-qty { text-align: center; }
         table.ledger .c-drcr, table.ledger th.c-drcr { text-align: center; font-weight: 700; }
-        table.ledger tbody td.c-debit { color: #B3261E; }
-        table.ledger tbody td.c-credit { color: #1B5E20; }
-        table.ledger .c-bal { font-weight: 700; }
+        table.ledger tbody td.c-debit { color: #B3261E; font-weight: 800; }
+        table.ledger tbody td.c-credit { color: #1B5E20; font-weight: 800; }
+        table.ledger .muted { color: #9AA79E; }
+        table.ledger .cc-dr { color: #B3261E; }
+        table.ledger .cc-cr { color: #1B5E20; }
+        table.ledger .c-bal { font-weight: 800; }
+        table.ledger td.bal-dr { color: #B3261E; }
+        table.ledger td.bal-cr { color: #1B5E20; }
         table.ledger tr { page-break-inside: avoid; }
-        .empty { text-align: center; color: #5C6B5F; font-style: italic; padding: 16px 8px !important; }
+        .empty { text-align: center; color: #5C6B5F; font-style: italic; padding: 12px 6px !important; }
         table.ledger tr.totals td {
-          background: #EAF3EC; font-weight: 800; border-top: 2px solid #1B5E20; font-size: 12px;
+          background: #EAF3EC; font-weight: 800; border-top: 2px solid #1B5E20; font-size: 9.5px;
         }
-        table.ledger tr.totals .c-debit { color: #B3261E; }
-        table.ledger tr.totals .c-credit { color: #1B5E20; }
 
         /* Footer */
         .foot {
-          margin-top: 22px; padding-top: 10px; border-top: 1.5px solid #1B5E20;
-          text-align: center; color: #4B5A4F; font-size: 10.5px;
+          margin-top: 14px; padding-top: 8px; border-top: 1.5px solid #1B5E20;
+          text-align: center; color: #4B5A4F; font-size: 8.5px; line-height: 1.5;
         }
-        .foot .biz { font-weight: 700; color: #1B5E20; letter-spacing: .5px; }
-        .foot .thanks { margin-top: 6px; font-weight: 700; color: #1B5E20; }
+        .foot .biz { font-weight: 700; color: #1B5E20; letter-spacing: .3px; }
+        .foot .thanks { margin-top: 4px; font-weight: 700; color: #1B5E20; }
       </style></head>
       <body>
         <div class="sheet">
@@ -568,7 +582,7 @@ export default function CustomerDetailScreen() {
             <div class="badge-logo">${garlicLogo}</div>
             <div class="biz-name">${escapeHtml(BIZ.name)}</div>
             <div class="biz-tag">${escapeHtml(BIZ.tagline)}</div>
-            <div class="biz-contact"><span>📞 ${escapeHtml(BIZ.phone)}</span> · <span>📍 ${escapeHtml(BIZ.address)}</span></div>
+            <div class="biz-contact"><span>📞 ${escapeHtml(BIZ.phone)}</span><span>📍 ${escapeHtml(BIZ.address)}</span></div>
           </div>
 
           <div class="doc-title">Customer Ledger Statement</div>
@@ -595,13 +609,20 @@ export default function CustomerDetailScreen() {
           </div>
 
           <table class="ledger">
+            <colgroup>
+              <col style="width:18%" />
+              <col style="width:13%" />
+              <col style="width:18%" />
+              <col style="width:18%" />
+              <col style="width:13%" />
+              <col style="width:20%" />
+            </colgroup>
             <thead>
               <tr>
                 <th class="c-date">Date</th>
-                <th class="c-part">Particulars</th>
                 <th class="c-qty">Quantity</th>
-                <th class="num c-debit">Debit</th>
-                <th class="num c-credit">Credit</th>
+                <th class="num">Debit</th>
+                <th class="num">Credit</th>
                 <th class="c-drcr">Dr./Cr.</th>
                 <th class="num c-bal">Balance</th>
               </tr>
@@ -612,11 +633,11 @@ export default function CustomerDetailScreen() {
                 ledgerRows.length === 0
                   ? ""
                   : `<tr class="totals">
-                      <td colspan="3">TOTAL</td>
+                      <td colspan="2">TOTAL</td>
                       <td class="num c-debit">${money(totalDebit, currency)}</td>
                       <td class="num c-credit">${money(totalCredit, currency)}</td>
-                      <td class="c-drcr">${drcr(closingBalance)}</td>
-                      <td class="num c-bal">${balCell(closingBalance)}</td>
+                      <td class="c-drcr ${closingBalance > 0.0001 ? "cc-dr" : closingBalance < -0.0001 ? "cc-cr" : ""}">${drcr(closingBalance)}</td>
+                      <td class="num c-bal ${closingBalance > 0.0001 ? "bal-dr" : closingBalance < -0.0001 ? "bal-cr" : ""}">${balCell(closingBalance)}</td>
                     </tr>`
               }
             </tbody>

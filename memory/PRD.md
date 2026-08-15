@@ -72,3 +72,9 @@ Redesigned ONLY `buildLedgerHtml()` in `app/customer/[id].tsx` (export mechanism
 - Root cause: expo-print web `printAsync({html})` printed the surrounding app document instead of the provided HTML.
 - Fix (`src/lib/pdf.ts`): on web, render the statement in an ISOLATED document — `window.open('','_blank')` + `document.write(html)` with an embedded auto-print `<script>`; hidden-iframe fallback (id `__stmt_print_frame__`) if pop-ups are blocked. Native path (printToFileAsync + Sharing) unchanged.
 - Verified (iteration_8.json, 100%): isolated tab contains full GARLIC HUB ledger with correct derived totals (₹200/₹50/₹150 Dr); app stays functional, 0 console errors.
+
+## Update (2026-08-15) — Ledger PDF: remove Particulars + mobile page + colour coding
+- Removed the PARTICULARS column entirely. Table is now exactly: DATE | QUANTITY | DEBIT | CREDIT | DR./CR. | BALANCE (colgroup gives more width to Debit/Credit/Dr-Cr/Balance).
+- Colour coding: Debit red-bold, Credit green-bold; Dr./Cr. column red for Dr / green for Cr; Balance red when Dr (outstanding) / green when Cr (advance). Empty cells show a muted "—".
+- Page size changed from A4 to mobile (100mm x 170mm portrait) with compact fonts/padding; customer & summary blocks stack vertically; header/summary/footer/running-balance logic unchanged and fully dynamic.
+- Verified: mobile-width visual render (correct layout + colours) and bundle live-check (Particulars removed, colour classes + 100mm page present). Export mechanism unchanged (isolated-tab, verified earlier in iteration_8).
