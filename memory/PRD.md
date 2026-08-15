@@ -52,3 +52,10 @@ Backend supervisor stays idle/FATAL because there is no backend — this is expe
 
 ## Backlog / Next
 - Continue feature work as requested by user.
+
+## Feature update (2026-08-15) — Purchase Bills → trader-grouped
+Reworked ONLY the Purchase Bills section (no changes to sales/customers/orders/bill create-edit system).
+- New pure helpers: `src/lib/purchase.ts` (`billPayment` → paid/remaining/status derived from existing binary `paid` flag, honours optional `paidAmount`; `groupByTrader`, `purchaseSummary`, `billsForTrader`).
+- `app/purchase/index.tsx` rewritten: top summary band (Total Bills · Pending · Outstanding, all derived), trader SEARCH (name/phone), and a list of TRADERS (grouped) instead of individual bills. Tap a trader → trader detail.
+- New screen `app/purchase/trader/[name].tsx`: lists that trader's bills (Date, Bill Amount, Paid, Remaining, status Paid/Partially Paid/Unpaid). Tapping a bill opens the existing `/purchase/[id]` details/edit screen (with uploaded photo) — reuses existing bill system.
+- Existing `app/purchase/[id].tsx` and `PurchaseForm` left untouched. Verified 100% via testing agent (iteration_6.json).

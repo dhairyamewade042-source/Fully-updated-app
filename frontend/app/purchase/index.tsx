@@ -1,69 +1,54 @@
-// Purchase Bills — list of raw-material bills from traders.
+// Purchase Bills — trader-grouped overview.
+// Shows a summary (total bills · pending · outstanding), a trader search, and a
+// list of TRADERS (not individual bills). Tapping a trader opens that trader's
+// bills. All figures are derived from the existing traderBills data.
 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import dayjs from "dayjs";
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
-import { FlatList, Image, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ScreenHeader } from "@/src/components/ScreenHeader";
 import { Card, EmptyState, Label } from "@/src/components/ui";
 import { useApp } from "@/src/context/AppContext";
-import { fmtDate, money } from "@/src/lib/format";
+import { money } from "@/src/lib/format";
+import { groupByTrader, purchaseSummary } from "@/src/lib/purchase";
 import { fontSize, radius, spacing } from "@/src/lib/theme";
-
-type Filter = "all" | "unpaid" | "paid";
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "unpaid", label: "Unpaid" },
-  { key: "paid", label: "Paid" },
-];
 
 export default function PurchaseListScreen() {
   const { theme, data } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("unpaid");
   const currency = data.settings.currency;
 
-  const rows = useMemo(() => {
+  const summary = useMemo(() => purchaseSummary(data.traderBills), [data.traderBills]);
+
+  const traders = useMemo(() => {
     const q = query.trim().toLowerCase();
-    let list = data.traderBills.slice();
-    if (filter === "paid") list = list.filter((b) => b.paid);
-    else if (filter === "unpaid") list = list.filter((b) => !b.paid);
+    let list = groupByTrader(data.traderBills);
     if (q) {
       list = list.filter(
-        (b) =>
-          b.traderName.toLowerCase().includes(q) ||
-          (b.phone || "").includes(q) ||
-          (b.notes || "").toLowerCase().includes(q),
+        (g) => g.name.toLowerCase().includes(q) || (g.phone || "").includes(q),
       );
     }
-    return list.sort((a, b) => b.date.localeCompare(a.date));
-  }, [data.traderBills, filter, query]);
+    // Outstanding first, then most recent activity, then name.
+    return list.sort(
+      (a, b) =>
+        b.outstanding - a.outstanding ||
+        b.lastDate.localeCompare(a.lastDate) ||
+        a.name.localeCompare(b.name),
+    );
+  }, [data.traderBills, query]);
 
-  const totals = useMemo(() => {
-    const unpaid = data.traderBills.filter((b) => !b.paid).reduce((a, b) => a + b.amount, 0);
-    const paid = data.traderBills.filter((b) => b.paid).reduce((a, b) => a + b.amount, 0);
-    return { unpaid, paid, all: unpaid + paid, count: data.traderBills.length };
-  }, [data.traderBills]);
-
-  const counts = useMemo(
-    () => ({
-      all: data.traderBills.length,
-      unpaid: data.traderBills.filter((b) => !b.paid).length,
-      paid: data.traderBills.filter((b) => b.paid).length,
-    }),
-    [data.traderBills],
-  );
+  const summaryLine = `${summary.totalBills} ${summary.totalBills === 1 ? "Bill" : "Bills"} · ${summary.pendingBills} Pending · ${money(summary.outstanding, currency)} Outstanding`;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.surface }}>
       <ScreenHeader
         title="Purchase Bills"
-        subtitle={`${totals.count} bills · you owe ${money(totals.unpaid, currency)}`}
+        subtitle={summaryLine}
         showBack
         right={
           <Pressable
@@ -80,38 +65,40 @@ export default function PurchaseListScreen() {
         }
       />
 
-      {/* Totals band */}
+      {/* Summary band */}
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
-        <View style={{ flexDirection: "row", gap: spacing.sm }}>
-          <Card
-            style={{ flex: 1, backgroundColor: "#FDECEA", borderColor: "#F5C6CB" }}
-            testID="purchase-total-unpaid"
-          >
-            <Label>Unpaid</Label>
-            <Text
-              style={{ color: theme.error, fontSize: fontSize.xl, fontWeight: "800", marginTop: 2 }}
-            >
-              {money(totals.unpaid, currency)}
+        <Card testID="purchase-summary" style={{ flexDirection: "row" }}>
+          <View style={{ flex: 1 }}>
+            <Label>Total Bills</Label>
+            <Text style={[styles.summaryVal, { color: theme.onSurface }]} testID="purchase-summary-total">
+              {summary.totalBills}
             </Text>
-          </Card>
-          <Card style={{ flex: 1 }} testID="purchase-total-paid">
-            <Label>Paid</Label>
+          </View>
+          <View style={{ width: 1, backgroundColor: theme.divider, marginHorizontal: spacing.sm }} />
+          <View style={{ flex: 1 }}>
+            <Label>Pending</Label>
             <Text
-              style={{
-                color: theme.brandPrimary,
-                fontSize: fontSize.xl,
-                fontWeight: "800",
-                marginTop: 2,
-              }}
+              style={[styles.summaryVal, { color: summary.pendingBills > 0 ? theme.error : theme.onSurface }]}
+              testID="purchase-summary-pending"
             >
-              {money(totals.paid, currency)}
+              {summary.pendingBills}
             </Text>
-          </Card>
-        </View>
+          </View>
+          <View style={{ width: 1, backgroundColor: theme.divider, marginHorizontal: spacing.sm }} />
+          <View style={{ flex: 1.4 }}>
+            <Label>Outstanding</Label>
+            <Text
+              style={[styles.summaryVal, { color: summary.outstanding > 0 ? theme.error : theme.brandPrimary }]}
+              testID="purchase-summary-outstanding"
+            >
+              {money(summary.outstanding, currency)}
+            </Text>
+          </View>
+        </Card>
       </View>
 
-      {/* Search */}
-      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+      {/* Trader search */}
+      <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm }}>
         <View
           style={{
             flexDirection: "row",
@@ -126,144 +113,91 @@ export default function PurchaseListScreen() {
         >
           <Ionicons name="search" size={18} color={theme.muted} />
           <TextInput
-            testID="purchase-search"
+            testID="purchase-trader-search"
             value={query}
             onChangeText={setQuery}
-            placeholder="Search trader, phone, notes"
+            placeholder="Search traders by name or phone"
             placeholderTextColor={theme.muted}
             style={{ flex: 1, marginLeft: spacing.sm, color: theme.onSurface, fontSize: fontSize.md }}
           />
+          {query ? (
+            <Pressable testID="purchase-trader-search-clear" onPress={() => setQuery("")} hitSlop={10}>
+              <Ionicons name="close-circle" size={18} color={theme.muted} />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
-      {/* Filter chips */}
-      <View
-        style={{
-          flexDirection: "row",
-          gap: spacing.sm,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
-        }}
-      >
-        {FILTERS.map((f) => {
-          const active = filter === f.key;
-          return (
-            <Pressable
-              key={f.key}
-              testID={`purchase-filter-${f.key}`}
-              onPress={() => setFilter(f.key)}
-              style={({ pressed }) => ({
-                flexShrink: 0,
-                height: 34,
-                paddingHorizontal: spacing.md,
-                borderRadius: radius.pill,
-                borderWidth: 1,
-                borderColor: active ? theme.brandPrimary : theme.border,
-                backgroundColor: active ? theme.brandPrimary : theme.surfaceSecondary,
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: pressed ? 0.85 : 1,
-              })}
-            >
-              <Text
-                style={{
-                  color: active ? theme.onBrandPrimary : theme.onSurface,
-                  fontWeight: "700",
-                  fontSize: fontSize.sm,
-                }}
-              >
-                {f.label} · {counts[f.key]}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
       <FlatList
-        data={rows}
-        keyExtractor={(b) => b.id}
+        data={traders}
+        keyExtractor={(g) => g.key}
         contentContainerStyle={{
           padding: spacing.lg,
-          paddingTop: 0,
+          paddingTop: spacing.sm,
           paddingBottom: 40 + insets.bottom,
         }}
         ListEmptyComponent={
           <EmptyState
-            title="No purchase bills yet"
-            subtitle="Tap + to log a bill from your trader. You can snap a photo of the bill and mark it Paid or Unpaid."
-            icon={<MaterialCommunityIcons name="file-image-outline" size={30} color={theme.brandPrimary} />}
+            title={query ? "No traders match your search" : "No purchase bills yet"}
+            subtitle={
+              query
+                ? "Try a different name or phone number."
+                : "Tap + to log a bill from your trader. You can snap a photo of the bill and mark it Paid or Unpaid."
+            }
+            icon={<MaterialCommunityIcons name="account-cash-outline" size={30} color={theme.brandPrimary} />}
           />
         }
         renderItem={({ item }) => (
           <Pressable
-            testID={`purchase-row-${item.id}`}
-            onPress={() => router.push(`/purchase/${item.id}`)}
+            testID={`trader-row-${item.key}`}
+            onPress={() => router.push(`/purchase/trader/${encodeURIComponent(item.name)}`)}
             style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
           >
-            <Card style={{ marginBottom: spacing.md, flexDirection: "row" }}>
-              {item.photoBase64 ? (
-                <Image
-                  source={{ uri: item.photoBase64 }}
-                  style={{ height: 64, width: 64, borderRadius: radius.md, marginRight: spacing.md }}
-                />
-              ) : (
-                <View
-                  style={{
-                    height: 64,
-                    width: 64,
-                    borderRadius: radius.md,
-                    marginRight: spacing.md,
-                    backgroundColor: theme.brandTertiary,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <MaterialCommunityIcons name="file-outline" size={26} color={theme.brandPrimary} />
-                </View>
-              )}
+            <Card style={{ marginBottom: spacing.md, flexDirection: "row", alignItems: "center" }}>
+              <View
+                style={{
+                  height: 46,
+                  width: 46,
+                  borderRadius: radius.pill,
+                  marginRight: spacing.md,
+                  backgroundColor: theme.brandTertiary,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <MaterialCommunityIcons name="store-outline" size={24} color={theme.brandPrimary} />
+              </View>
+
               <View style={{ flex: 1 }}>
-                <View
-                  style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}
-                >
-                  <Text
-                    style={{ color: theme.onSurface, fontSize: fontSize.lg, fontWeight: "800", flex: 1 }}
-                  >
-                    {item.traderName}
-                  </Text>
-                  <View
-                    style={{
-                      paddingHorizontal: spacing.sm,
-                      paddingVertical: 3,
-                      borderRadius: radius.pill,
-                      backgroundColor: item.paid ? theme.brandTertiary : "#FDECEA",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: item.paid ? theme.onBrandTertiary : theme.error,
-                        fontWeight: "800",
-                        fontSize: fontSize.xs,
-                      }}
-                    >
-                      {item.paid ? "PAID" : "UNPAID"}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={{ color: theme.muted, fontSize: fontSize.sm, marginTop: 2 }}>
-                  {fmtDate(item.date)}
-                  {item.quantityKg ? ` · ${item.quantityKg} kg` : ""}
-                </Text>
                 <Text
-                  style={{
-                    color: item.paid ? theme.onSurface : theme.error,
-                    fontSize: fontSize.lg,
-                    fontWeight: "800",
-                    marginTop: 4,
-                  }}
+                  numberOfLines={1}
+                  style={{ color: theme.onSurface, fontSize: fontSize.lg, fontWeight: "800" }}
                 >
-                  {money(item.amount, currency)}
+                  {item.name}
+                </Text>
+                <Text style={{ color: theme.muted, fontSize: fontSize.sm, marginTop: 2 }}>
+                  {item.billCount} {item.billCount === 1 ? "bill" : "bills"} · Purchase{" "}
+                  {money(item.totalPurchase, currency)}
+                  {item.pendingCount > 0 ? ` · ${item.pendingCount} pending` : ""}
                 </Text>
               </View>
+
+              <View style={{ alignItems: "flex-end", marginLeft: spacing.sm }}>
+                <Text
+                  style={{
+                    color: item.outstanding > 0 ? theme.error : theme.brandPrimary,
+                    fontSize: fontSize.lg,
+                    fontWeight: "800",
+                  }}
+                >
+                  {money(item.outstanding, currency)}
+                </Text>
+                <Text style={{ color: theme.muted, fontSize: fontSize.xs, marginTop: 2 }}>
+                  {item.outstanding > 0 ? "Outstanding" : "Cleared"}
+                </Text>
+              </View>
+
+              <Ionicons name="chevron-forward" size={20} color={theme.muted} style={{ marginLeft: spacing.xs }} />
             </Card>
           </Pressable>
         )}
@@ -279,5 +213,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: "center",
     justifyContent: "center",
+  },
+  summaryVal: {
+    fontSize: fontSize.xl,
+    fontWeight: "800",
+    marginTop: 2,
   },
 });
