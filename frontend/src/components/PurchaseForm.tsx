@@ -6,6 +6,7 @@ import React, { useEffect, useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -54,6 +55,7 @@ export const PurchaseForm = ({
   const [photo, setPhoto] = useState<string | undefined>(initial?.photoBase64);
   const [paid, setPaid] = useState<boolean>(initial?.paid ?? false);
   const [busy, setBusy] = useState<null | "save" | "delete" | "photo">(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   // Auto-compute amount when qty*price provided, unless the user has manually
   // edited the amount field.
@@ -118,16 +120,35 @@ export const PurchaseForm = ({
         <View style={{ marginTop: spacing.sm }}>
           {photo ? (
             <View>
-              <Image
-                source={{ uri: photo }}
-                testID="purchase-photo"
-                style={{
-                  width: "100%",
-                  height: 220,
-                  borderRadius: radius.lg,
-                  backgroundColor: theme.brandTertiary,
-                }}
-              />
+              <Pressable
+                testID="purchase-photo-view"
+                onPress={() => setViewerOpen(true)}
+                style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+              >
+                <Image
+                  source={{ uri: photo }}
+                  testID="purchase-photo"
+                  style={{
+                    width: "100%",
+                    height: 220,
+                    borderRadius: radius.lg,
+                    backgroundColor: theme.brandTertiary,
+                  }}
+                />
+                {/* Floating "View Full" button on the image */}
+                <Pressable
+                  testID="purchase-photo-view-btn"
+                  onPress={() => setViewerOpen(true)}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.viewFullBtn,
+                    { opacity: pressed ? 0.85 : 1 },
+                  ]}
+                >
+                  <Ionicons name="expand" size={16} color="#FFF" />
+                  <Text style={styles.viewFullText}>View Full</Text>
+                </Pressable>
+              </Pressable>
               <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm }}>
                 <Button
                   label="Retake"
@@ -361,6 +382,46 @@ export const PurchaseForm = ({
           </Body>
         ) : null}
       </View>
+
+      {/* Full-screen bill viewer */}
+      <Modal
+        visible={viewerOpen && !!photo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewerOpen(false)}
+      >
+        <View style={styles.viewerBackdrop}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.viewerScroll}
+            maximumZoomScale={4}
+            minimumZoomScale={1}
+            centerContent
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
+          >
+            {photo ? (
+              <Image
+                source={{ uri: photo }}
+                testID="purchase-photo-fullscreen"
+                resizeMode="contain"
+                style={styles.viewerImage}
+              />
+            ) : null}
+          </ScrollView>
+          <Pressable
+            testID="purchase-photo-close"
+            onPress={() => setViewerOpen(false)}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.viewerClose,
+              { top: insets.top + spacing.md, opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <Ionicons name="close" size={26} color="#FFF" />
+          </Pressable>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -372,5 +433,46 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     alignItems: "center",
     justifyContent: "center",
+  },
+  viewFullBtn: {
+    position: "absolute",
+    top: spacing.sm,
+    right: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: "rgba(0,0,0,0.6)",
+  },
+  viewFullText: {
+    color: "#FFF",
+    fontWeight: "700",
+    fontSize: fontSize.sm,
+  },
+  viewerBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.92)",
+  },
+  viewerScroll: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  viewerImage: {
+    width: "100%",
+    height: "100%",
+    minHeight: 300,
+  },
+  viewerClose: {
+    position: "absolute",
+    right: spacing.lg,
+    height: 44,
+    width: 44,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
 });
