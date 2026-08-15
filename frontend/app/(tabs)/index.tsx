@@ -205,10 +205,10 @@ export default function DashboardScreen() {
           </Pressable>
         ) : null}
 
-        {/* Hero — selected date summary (tap to change date) */}
+        {/* Hero — selected date summary (tap to open full day report) */}
         <Pressable
           testID="dashboard-hero-press"
-          onPress={() => dateRef.current?.open()}
+          onPress={() => router.push(`/day-report/${selectedDate}`)}
           style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}
         >
         <Card
@@ -248,9 +248,9 @@ export default function DashboardScreen() {
                 borderRadius: radius.pill,
               }}
             >
-              <Ionicons name="calendar-outline" size={13} color="#FFF" />
+              <Ionicons name="document-text-outline" size={13} color="#FFF" />
               <Text style={{ color: "#FFF", fontSize: fontSize.xs, fontWeight: "700" }}>
-                Change date
+                View report
               </Text>
             </View>
           </View>

@@ -42,5 +42,10 @@ Backend supervisor stays idle/FATAL because there is no backend — this is expe
 ## Status
 - Imported & running on port 3000. Frontend-only Expo web app.
 
+## Feature log (post-migration)
+- 2026-08-15: Full-screen **bill photo viewer** on Purchase Bill form ("View Full" button + tap image → zoomable modal). File: `src/components/PurchaseForm.tsx`.
+- 2026-08-15: Dashboard **hero "Today's Sales" card is tappable** → opens **Day Report** screen (`app/day-report/[date].tsx`) for the selected date. Shows summary KPIs + full customer/bill list with Paid/Partial/Unpaid status + payments collected + purchases. **Export PDF statement** via `expo-print` (web = print dialog / Save-as-PDF; native = printToFileAsync + Sharing share sheet). Helper: `src/lib/pdf.ts`. `DateField` now `forwardRef` exposing `open()`; report screen has its own date picker to change day.
+- Added dependency: `expo-print@~15.0.8`.
+
 ## Backlog / Next
 - Continue feature work as requested by user.
