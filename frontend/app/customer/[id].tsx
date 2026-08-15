@@ -369,119 +369,265 @@ export default function CustomerDetailScreen() {
       .replace(/"/g, "&quot;");
 
   const buildLedgerHtml = (): string => {
-    const businessName = data.settings.businessName;
-    const rowsBills = bills
-      .map((b, i) => {
-        const pend = Math.max(0, b.total - b.received);
-        const st = pend <= 0.0001 ? "Paid" : b.received <= 0.0001 ? "Unpaid" : "Partial";
-        const color = st === "Paid" ? "#2E7D32" : st === "Partial" ? "#8A5A00" : "#D32F2F";
-        const bg = st === "Paid" ? "#E8F5E9" : st === "Partial" ? "#FFF3CD" : "#FDECEA";
-        return `<tr>
-          <td>${i + 1}</td>
-          <td>${fmtDate(b.date)}</td>
-          <td class="num">${b.quantityKg}</td>
-          <td class="num">${money(b.pricePerKg, currency)}</td>
-          <td class="num">${money(b.total, currency)}</td>
-          <td class="num">${money(b.received, currency)}</td>
-          <td class="num">${money(pend, currency)}</td>
-          <td><span class="badge" style="color:${color};background:${bg}">${st}</span></td>
-        </tr>`;
-      })
-      .join("");
+    // ---- Business identity (letterhead) ----
+    const BIZ = {
+      name: "GARLIC HUB",
+      tagline: "Garlic Supplier & Packaging",
+      phone: "+91 7509730965",
+      address: "Bercha Road, Dusherra Maidan, Shajapur",
+    };
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const ymd = (s: string) => dayjs(s).format("YYYY-MM-DD");
 
-    const rowsPayments = payments
-      .map((p, i) => {
-        return `<tr>
-          <td>${i + 1}</td>
-          <td>${fmtDate(p.date)}</td>
-          <td class="num">${money(p.amount, currency)}</td>
-          <td>${p.appliedTo.length} bill${p.appliedTo.length === 1 ? "" : "s"}</td>
-        </tr>`;
-      })
-      .join("");
+    // ---- Build ONE chronological ledger from actual data ----
+    // Each sale => a Debit (bill) line; any cash paid on that bill day => a Credit line.
+    // Each payment => a Credit line. Running balance = prev + debit - credit.
+    type Row = {
+      date: string;
+      created: string;
+      particulars: string;
+      qty: string;
+      debit: number;
+      credit: number;
+    };
+    const events: Row[] = [];
+    bills.forEach((b) => {
+      events.push({
+        date: b.date,
+        created: b.createdAt || b.date,
+        particulars: "Garlic",
+        qty: b.quantityKg ? `${b.quantityKg} KG` : "",
+        debit: round2(b.total),
+        credit: 0,
+      });
+      if ((b.initialReceived || 0) > 0.0001) {
+        events.push({
+          date: b.date,
+          created: b.createdAt || b.date,
+          particulars: "Payment Received (on bill)",
+          qty: "",
+          debit: 0,
+          credit: round2(b.initialReceived),
+        });
+      }
+    });
+    payments.forEach((p) => {
+      events.push({
+        date: p.date,
+        created: p.createdAt || p.date,
+        particulars: "Payment Received",
+        qty: "",
+        debit: 0,
+        credit: round2(p.amount),
+      });
+    });
+    events.sort(
+      (a, b) =>
+        ymd(a.date).localeCompare(ymd(b.date)) ||
+        String(a.created).localeCompare(String(b.created)),
+    );
 
-    const rowsAdvance = advanceHistory
-      .slice()
-      .reverse()
-      .map((h, i) => {
-        const relBill = h.saleId ? bills.find((b) => b.id === h.saleId) : undefined;
-        const isAdded = h.type === "added";
-        const desc = isAdded
-          ? h.paymentId
-            ? "Added from payment"
-            : relBill
-              ? `Added from overpaid bill (${fmtDate(relBill.date)})`
-              : "Advance added"
-          : relBill
-            ? `Used on bill (${fmtDate(relBill.date)})`
-            : "Advance used on a bill";
-        const color = isAdded ? "#2E7D32" : "#8A5A00";
-        return `<tr>
-          <td>${i + 1}</td>
-          <td>${fmtDate(h.date)}</td>
-          <td>${desc}</td>
-          <td class="num" style="color:${color};font-weight:800">${isAdded ? "+" : "-"}${money(h.amount, currency)}</td>
-        </tr>`;
-      })
-      .join("");
+    // ---- Running balance + totals (nothing hard-coded) ----
+    const openingBalance = 0; // statement covers full history
+    let bal = openingBalance;
+    let totalDebit = 0;
+    let totalCredit = 0;
+    const ledgerRows = events.map((e) => {
+      bal = round2(bal + e.debit - e.credit);
+      totalDebit = round2(totalDebit + e.debit);
+      totalCredit = round2(totalCredit + e.credit);
+      return { ...e, balance: bal };
+    });
+    totalDebit = round2(totalDebit);
+    totalCredit = round2(totalCredit);
+    const closingBalance = round2(openingBalance + totalDebit - totalCredit);
+
+    // ---- Dates / period ----
+    const now = dayjs();
+    const statementDate = now.format("DD MMM YYYY");
+    const generatedOn = now.format("DD MMM YYYY, hh:mm A");
+    const firstDate = events.length ? events[0].date : now.toISOString();
+    const lastDate = events.length ? events[events.length - 1].date : now.toISOString();
+    const statementPeriod = `${fmtDate(firstDate)} — ${fmtDate(lastDate)}`;
+
+    // ---- Formatting helpers ----
+    const drcr = (n: number) => (n > 0.0001 ? "Dr." : n < -0.0001 ? "Cr." : "—");
+    const balCell = (n: number) =>
+      Math.abs(n) <= 0.0001 ? money(0, currency) : `${money(Math.abs(n), currency)} ${drcr(n)}`;
+    const amt = (n: number) => (n > 0.0001 ? money(n, currency) : "—");
+
+    const garlicLogo = `
+      <svg viewBox="0 0 64 64" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M32 5 C34 11 30 13 33 18" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <path d="M32 16 C19 16 15 30 15 40 C15 52 23 59 32 59 C41 59 49 52 49 40 C49 30 45 16 32 16 Z" fill="#FFFFFF"/>
+        <path d="M32 17 C30 31 30 46 32 58" stroke="#1B5E20" stroke-width="1.6" fill="none"/>
+        <path d="M24 20 C21 33 21 47 26 57" stroke="#1B5E20" stroke-width="1.4" fill="none"/>
+        <path d="M40 20 C43 33 43 47 38 57" stroke="#1B5E20" stroke-width="1.4" fill="none"/>
+      </svg>`;
+
+    const rowsHtml =
+      ledgerRows.length === 0
+        ? `<tr><td colspan="7" class="empty">No transactions in this period.</td></tr>`
+        : ledgerRows
+            .map((r) => {
+              const isCredit = r.credit > 0.0001;
+              return `<tr>
+                <td class="c-date">${fmtDate(r.date)}</td>
+                <td class="c-part">${escapeHtml(r.particulars)}</td>
+                <td class="c-qty">${r.qty ? escapeHtml(r.qty) : "—"}</td>
+                <td class="num c-debit">${r.debit > 0.0001 ? money(r.debit, currency) : "—"}</td>
+                <td class="num c-credit">${r.credit > 0.0001 ? money(r.credit, currency) : "—"}</td>
+                <td class="c-drcr">${isCredit ? "Cr." : "Dr."}</td>
+                <td class="num c-bal">${balCell(r.balance)}</td>
+              </tr>`;
+            })
+            .join("");
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <style>
+        @page { size: A4; margin: 14mm 12mm 16mm 12mm; }
         * { box-sizing: border-box; }
-        body { font-family: -apple-system, Roboto, Helvetica, Arial, sans-serif; color: #1A1F1C; padding: 28px; }
-        .head { border-bottom: 3px solid #2E7D32; padding-bottom: 14px; margin-bottom: 18px; }
-        .brand { font-size: 20px; font-weight: 800; color: #1B5E20; }
-        .title { font-size: 12px; letter-spacing: 1px; color: #5C6B5F; text-transform: uppercase; margin-top: 4px; }
-        .cust { font-size: 22px; font-weight: 800; margin-top: 8px; }
-        .sub { font-size: 12px; color: #5C6B5F; margin-top: 2px; }
-        .cards { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 18px; }
-        .stat { flex: 1 1 22%; border: 1px solid #E0E8E1; border-radius: 12px; padding: 12px 14px; background: #F4F7F4; }
-        .stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #5C6B5F; font-weight: 700; }
-        .stat .v { font-size: 18px; font-weight: 800; color: #1A1F1C; margin-top: 4px; }
-        h2 { font-size: 14px; margin: 20px 0 8px; color: #1B5E20; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #EAF0EB; }
-        th { background: #E8F5E9; color: #1B5E20; text-transform: uppercase; font-size: 10px; letter-spacing: .4px; }
-        td.num, th.num { text-align: right; }
-        .badge { padding: 3px 9px; border-radius: 999px; font-weight: 700; font-size: 11px; }
-        .empty { color: #5C6B5F; font-style: italic; padding: 8px 2px; }
-        .foot { margin-top: 26px; font-size: 10px; color: #8DA093; border-top: 1px solid #EAF0EB; padding-top: 10px; }
-        tr.total td { font-weight: 800; background: #F4F7F4; border-top: 2px solid #C8E6C9; }
+        html, body { margin: 0; padding: 0; }
+        body {
+          font-family: "Helvetica Neue", Helvetica, Arial, "Segoe UI", Roboto, sans-serif;
+          color: #1E2B22; font-size: 12px; line-height: 1.45;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .sheet { max-width: 800px; margin: 0 auto; }
+
+        /* Letterhead */
+        .letterhead { text-align: center; padding-bottom: 12px; border-bottom: 2.5px solid #1B5E20; }
+        .badge-logo {
+          width: 56px; height: 56px; border-radius: 50%; background: #1B5E20;
+          display: inline-flex; align-items: center; justify-content: center; margin-bottom: 6px;
+        }
+        .biz-name { font-size: 26px; font-weight: 800; color: #1B5E20; letter-spacing: 2px; }
+        .biz-tag { font-size: 12px; color: #4B5A4F; letter-spacing: .5px; margin-top: 2px; }
+        .biz-contact { font-size: 11px; color: #4B5A4F; margin-top: 6px; }
+        .biz-contact span { margin: 0 6px; }
+
+        .doc-title {
+          text-align: center; font-size: 12px; font-weight: 700; letter-spacing: 3px;
+          text-transform: uppercase; color: #1B5E20; background: #EAF3EC;
+          padding: 6px 0; margin: 14px 0 16px; border-radius: 4px;
+        }
+
+        /* Customer + summary blocks */
+        .cols { display: flex; gap: 14px; margin-bottom: 16px; }
+        .block { flex: 1; border: 1px solid #D6E2D9; border-radius: 6px; overflow: hidden; }
+        .block .bhead {
+          background: #1B5E20; color: #fff; font-size: 10.5px; font-weight: 700;
+          letter-spacing: 1px; text-transform: uppercase; padding: 6px 10px;
+        }
+        .block .bbody { padding: 8px 10px; background: #fff; }
+        .kv { display: flex; justify-content: space-between; padding: 3px 0; }
+        .kv .k { color: #5C6B5F; }
+        .kv .v { font-weight: 700; color: #1E2B22; text-align: right; }
+        .kv .v.dr { color: #B3261E; }
+        .kv .v.cr { color: #1B5E20; }
+        .summary .bbody { background: #F5F8F5; }
+
+        /* Ledger table */
+        table.ledger { width: 100%; border-collapse: collapse; }
+        table.ledger thead th {
+          background: #1B5E20; color: #fff; font-size: 10.5px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: .4px; padding: 8px 8px;
+          border: 1px solid #145018; text-align: left;
+        }
+        table.ledger tbody td {
+          padding: 7px 8px; border: 1px solid #D6E2D9; font-size: 11.5px; vertical-align: top;
+        }
+        table.ledger tbody tr:nth-child(even) td { background: #F5F8F5; }
+        table.ledger .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        table.ledger th.num { text-align: right; }
+        table.ledger .c-qty, table.ledger th.c-qty { text-align: center; }
+        table.ledger .c-drcr, table.ledger th.c-drcr { text-align: center; font-weight: 700; }
+        table.ledger tbody td.c-debit { color: #B3261E; }
+        table.ledger tbody td.c-credit { color: #1B5E20; }
+        table.ledger .c-bal { font-weight: 700; }
+        table.ledger tr { page-break-inside: avoid; }
+        .empty { text-align: center; color: #5C6B5F; font-style: italic; padding: 16px 8px !important; }
+        table.ledger tr.totals td {
+          background: #EAF3EC; font-weight: 800; border-top: 2px solid #1B5E20; font-size: 12px;
+        }
+        table.ledger tr.totals .c-debit { color: #B3261E; }
+        table.ledger tr.totals .c-credit { color: #1B5E20; }
+
+        /* Footer */
+        .foot {
+          margin-top: 22px; padding-top: 10px; border-top: 1.5px solid #1B5E20;
+          text-align: center; color: #4B5A4F; font-size: 10.5px;
+        }
+        .foot .biz { font-weight: 700; color: #1B5E20; letter-spacing: .5px; }
+        .foot .thanks { margin-top: 6px; font-weight: 700; color: #1B5E20; }
       </style></head>
       <body>
-        <div class="head">
-          <div class="brand">${escapeHtml(businessName)}</div>
-          <div class="title">Customer Ledger Statement</div>
-          <div class="cust">${escapeHtml(customer!.name)}</div>
-          <div class="sub">${customer!.phone ? escapeHtml(customer!.phone) : "No phone"} · as on ${dayjs().format("DD MMM YYYY")}</div>
+        <div class="sheet">
+          <div class="letterhead">
+            <div class="badge-logo">${garlicLogo}</div>
+            <div class="biz-name">${escapeHtml(BIZ.name)}</div>
+            <div class="biz-tag">${escapeHtml(BIZ.tagline)}</div>
+            <div class="biz-contact"><span>📞 ${escapeHtml(BIZ.phone)}</span> · <span>📍 ${escapeHtml(BIZ.address)}</span></div>
+          </div>
+
+          <div class="doc-title">Customer Ledger Statement</div>
+
+          <div class="cols">
+            <div class="block">
+              <div class="bhead">Customer Details</div>
+              <div class="bbody">
+                <div class="kv"><span class="k">Name</span><span class="v">${escapeHtml(customer!.name)}</span></div>
+                <div class="kv"><span class="k">Phone</span><span class="v">${customer!.phone ? escapeHtml(customer!.phone) : "—"}</span></div>
+                <div class="kv"><span class="k">Statement Date</span><span class="v">${statementDate}</span></div>
+                <div class="kv"><span class="k">Statement Period</span><span class="v">${statementPeriod}</span></div>
+              </div>
+            </div>
+            <div class="block summary">
+              <div class="bhead">Account Summary</div>
+              <div class="bbody">
+                <div class="kv"><span class="k">Opening Balance</span><span class="v">${balCell(openingBalance)}</span></div>
+                <div class="kv"><span class="k">Total Debit</span><span class="v dr">${money(totalDebit, currency)}</span></div>
+                <div class="kv"><span class="k">Total Credit</span><span class="v cr">${money(totalCredit, currency)}</span></div>
+                <div class="kv"><span class="k">Closing Balance</span><span class="v ${closingBalance > 0.0001 ? "dr" : closingBalance < -0.0001 ? "cr" : ""}">${balCell(closingBalance)}</span></div>
+              </div>
+            </div>
+          </div>
+
+          <table class="ledger">
+            <thead>
+              <tr>
+                <th class="c-date">Date</th>
+                <th class="c-part">Particulars</th>
+                <th class="c-qty">Quantity</th>
+                <th class="num c-debit">Debit</th>
+                <th class="num c-credit">Credit</th>
+                <th class="c-drcr">Dr./Cr.</th>
+                <th class="num c-bal">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              ${
+                ledgerRows.length === 0
+                  ? ""
+                  : `<tr class="totals">
+                      <td colspan="3">TOTAL</td>
+                      <td class="num c-debit">${money(totalDebit, currency)}</td>
+                      <td class="num c-credit">${money(totalCredit, currency)}</td>
+                      <td class="c-drcr">${drcr(closingBalance)}</td>
+                      <td class="num c-bal">${balCell(closingBalance)}</td>
+                    </tr>`
+              }
+            </tbody>
+          </table>
+
+          <div class="foot">
+            <div class="biz">${escapeHtml(BIZ.name)} | ${escapeHtml(BIZ.phone)} | ${escapeHtml(BIZ.address)}</div>
+            <div>Statement generated on ${generatedOn}</div>
+            <div class="thanks">Thank you for your business!</div>
+          </div>
         </div>
-
-        <div class="cards">
-          <div class="stat"><div class="l">Total Purchased</div><div class="v">${money(totalPurchased, currency)}</div></div>
-          <div class="stat"><div class="l">Total Received</div><div class="v">${money(totalReceived, currency)}</div></div>
-          <div class="stat"><div class="l">Current Pending</div><div class="v" style="color:${pending > 0 ? "#D32F2F" : "#2E7D32"}">${money(pending, currency)}</div></div>
-          <div class="stat"><div class="l">Advance Balance</div><div class="v" style="color:${advance > 0 ? "#2E7D32" : "#1A1F1C"}">${money(advance, currency)}</div></div>
-        </div>
-
-        <h2>Bills / Purchases</h2>
-        ${bills.length === 0 ? '<div class="empty">No bills yet.</div>' : `<table>
-          <thead><tr><th>#</th><th>Date</th><th class="num">Qty (kg)</th><th class="num">Price/kg</th><th class="num">Total</th><th class="num">Received</th><th class="num">Pending</th><th>Status</th></tr></thead>
-          <tbody>${rowsBills}
-            <tr class="total"><td></td><td>TOTAL</td><td class="num">${totalQty}</td><td></td><td class="num">${money(totalPurchased, currency)}</td><td class="num">${money(totalReceived, currency)}</td><td class="num">${money(pending, currency)}</td><td></td></tr>
-          </tbody></table>`}
-
-        <h2>Payments Received</h2>
-        ${payments.length === 0 ? '<div class="empty">No payments recorded.</div>' : `<table>
-          <thead><tr><th>#</th><th>Date</th><th class="num">Amount</th><th>Applied</th></tr></thead>
-          <tbody>${rowsPayments}</tbody></table>`}
-
-        <h2>Advance History</h2>
-        ${advanceHistory.length === 0 ? '<div class="empty">No advance activity.</div>' : `<table>
-          <thead><tr><th>#</th><th>Date</th><th>Detail</th><th class="num">Amount</th></tr></thead>
-          <tbody>${rowsAdvance}</tbody></table>`}
-
-        <div class="foot">Generated by ${escapeHtml(businessName)} · GarlicLedger Pro · ${dayjs().format("DD MMM YYYY, hh:mm A")}</div>
       </body></html>`;
   };
 

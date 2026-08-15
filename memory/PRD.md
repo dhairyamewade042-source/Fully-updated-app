@@ -59,3 +59,10 @@ Reworked ONLY the Purchase Bills section (no changes to sales/customers/orders/b
 - `app/purchase/index.tsx` rewritten: top summary band (Total Bills · Pending · Outstanding, all derived), trader SEARCH (name/phone), and a list of TRADERS (grouped) instead of individual bills. Tap a trader → trader detail.
 - New screen `app/purchase/trader/[name].tsx`: lists that trader's bills (Date, Bill Amount, Paid, Remaining, status Paid/Partially Paid/Unpaid). Tapping a bill opens the existing `/purchase/[id]` details/edit screen (with uploaded photo) — reuses existing bill system.
 - Existing `app/purchase/[id].tsx` and `PurchaseForm` left untouched. Verified 100% via testing agent (iteration_6.json).
+
+## Feature update (2026-08-15) — Customer Statement PDF redesigned (A4 khata)
+Redesigned ONLY `buildLedgerHtml()` in `app/customer/[id].tsx` (export mechanism `src/lib/pdf.ts` unchanged).
+- Professional A4, print-ready, dark-green/white/light-gray theme; inline SVG garlic logo letterhead: GARLIC HUB · "Garlic Supplier & Packaging" · 📞 +91 7509730965 · 📍 Bercha Road, Dusherra Maidan, Shajapur. No QR/GSTIN.
+- Customer Details (Name, Phone, Statement Date, Statement Period) + Account Summary (Opening, Total Debit, Total Credit, Closing Dr./Cr.).
+- ONE chronological khata ledger table: Date · Particulars · Quantity · Debit · Credit · Dr./Cr. · Balance. Each sale → Debit row (+ its initialReceived as a Credit row); each payment → Credit row. Running Balance = prev + Debit − Credit; advance shows Cr. Dark-green header (repeats per print page via thead), zebra rows, tabular ₹, auto totals row. Footer with generated timestamp + "Thank you for your business!". No app controls / no Balance-Due box. All values derived from real data (no hard-coding).
+- Verified: visual A4 render (premium) + runtime/regression smoke via testing agent (iteration_7.json, 100%, 0 errors).

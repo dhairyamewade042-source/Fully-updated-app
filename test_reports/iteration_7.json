@@ -1,0 +1,35 @@
+{
+  "summary": "Frontend-only runtime/regression smoke test of the redesigned Customer 'Download Statement (PDF)' feature on GarlicLedger Pro. Seeded a sale (Shabbir, 1kg @ ₹120, received ₹50 → pending ₹70) via New Sale, opened the customer profile via More → Customers → Shabbir, and exercised the Download Statement (PDF) button. window.print was invoked exactly once with ZERO page errors and ZERO console errors. The profile remained fully interactive afterwards, and the Receive Payment flow opened successfully as regression.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "app/customer/[id].tsx buildLedgerHtml() (~L371): all inputs (bills, payments, customer, currency) are in-scope; escapeHtml is defined locally and used on particulars/qty — safe. Running balance uses round2 to avoid float drift — good.",
+    "SVG logo is inlined with white-on-green disc — renders in print via -webkit-print-color-adjust: exact.",
+    "Minor: openingBalance is hard-coded to 0 (statement covers full history). Fine for MVP but note if partial-period statements are ever needed.",
+    "Sort key uses ymd(date) then createdAt string — deterministic for same-day debit/credit pairs.",
+    "No unhandled promise / undefined variable paths hit during export (verified at runtime)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "Runtime seed via UI: 1 customer 'Shabbir' (msumoltbwep6e2) with 1 bill (1 kg @ ₹120, received ₹50, pending ₹70). Stored in browser localStorage only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Navigation: tab-sale → fill sale-customer/sale-quantity/sale-price/sale-received → sale-save. Then tab-more → more-customers → tap customer name to open /customer/<id>. Export button testid: customer-export-pdf. On web it calls Print.printAsync which triggers window.print(); stub window.print via page.add_init_script to capture invocation without a blocking print dialog. Other useful testids: customer-receive-payment, tab-home/sale/pending/orders/more.",
+  "verified_behaviours": {
+    "app_loaded_on_preview": true,
+    "sale_seed_created": "Shabbir 1kg @ ₹120, received ₹50, pending ₹70",
+    "profile_metrics_correct": "CURRENT PENDING ₹70, TOTAL PURCHASED ₹120 (1 kg), RECEIVED ₹50",
+    "export_button_present": "data-testid=customer-export-pdf found (1 match)",
+    "export_click_runtime": "PASS — window.print called 1x, 0 pageerrors, 0 console errors",
+    "app_still_functional_after_export": true,
+    "receive_payment_regression": "Receive ₹70 button opens Receive Payment screen for Shabbir",
+    "purchase_history_renders": "Bill row 15 Aug 2026 · 1 kg @ ₹120 · Pending ₹70 visible",
+    "payment_history_renders": "'No payments received yet' empty state visible"
+  }
+}
