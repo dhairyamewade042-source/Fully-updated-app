@@ -21,6 +21,7 @@ import { showToast } from "@/src/components/Toast";
 import { Body, Button, Card, EmptyState, Label } from "@/src/components/ui";
 import { useApp } from "@/src/context/AppContext";
 import { fmtDate, kg, money } from "@/src/lib/format";
+import { exportHtmlAsPdf } from "@/src/lib/pdf";
 import { fontSize, radius, spacing } from "@/src/lib/theme";
 import { Sale, Payment } from "@/src/lib/types";
 import { openWhatsApp, paymentReminder } from "@/src/lib/whatsapp";
@@ -333,6 +334,7 @@ export default function CustomerDetailScreen() {
   const [addMenu, setAddMenu] = useState(false);
   const [billEditor, setBillEditor] = useState<Partial<Sale> | null>(null);
   const [paymentEditor, setPaymentEditor] = useState<Partial<Payment> | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const bills = useMemo(() => (customer ? customerBills(customer.id) : []), [customer, customerBills]);
   const payments = useMemo(
@@ -358,6 +360,140 @@ export default function CustomerDetailScreen() {
   const totalPurchased = bills.reduce((a, b) => a + b.total, 0);
   const totalReceived = totalPurchased - pending;
   const totalQty = bills.reduce((a, b) => a + b.quantityKg, 0);
+
+  const escapeHtml = (s: string) =>
+    String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const buildLedgerHtml = (): string => {
+    const businessName = data.settings.businessName;
+    const rowsBills = bills
+      .map((b, i) => {
+        const pend = Math.max(0, b.total - b.received);
+        const st = pend <= 0.0001 ? "Paid" : b.received <= 0.0001 ? "Unpaid" : "Partial";
+        const color = st === "Paid" ? "#2E7D32" : st === "Partial" ? "#8A5A00" : "#D32F2F";
+        const bg = st === "Paid" ? "#E8F5E9" : st === "Partial" ? "#FFF3CD" : "#FDECEA";
+        return `<tr>
+          <td>${i + 1}</td>
+          <td>${fmtDate(b.date)}</td>
+          <td class="num">${b.quantityKg}</td>
+          <td class="num">${money(b.pricePerKg, currency)}</td>
+          <td class="num">${money(b.total, currency)}</td>
+          <td class="num">${money(b.received, currency)}</td>
+          <td class="num">${money(pend, currency)}</td>
+          <td><span class="badge" style="color:${color};background:${bg}">${st}</span></td>
+        </tr>`;
+      })
+      .join("");
+
+    const rowsPayments = payments
+      .map((p, i) => {
+        return `<tr>
+          <td>${i + 1}</td>
+          <td>${fmtDate(p.date)}</td>
+          <td class="num">${money(p.amount, currency)}</td>
+          <td>${p.appliedTo.length} bill${p.appliedTo.length === 1 ? "" : "s"}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const rowsAdvance = advanceHistory
+      .slice()
+      .reverse()
+      .map((h, i) => {
+        const relBill = h.saleId ? bills.find((b) => b.id === h.saleId) : undefined;
+        const isAdded = h.type === "added";
+        const desc = isAdded
+          ? h.paymentId
+            ? "Added from payment"
+            : relBill
+              ? `Added from overpaid bill (${fmtDate(relBill.date)})`
+              : "Advance added"
+          : relBill
+            ? `Used on bill (${fmtDate(relBill.date)})`
+            : "Advance used on a bill";
+        const color = isAdded ? "#2E7D32" : "#8A5A00";
+        return `<tr>
+          <td>${i + 1}</td>
+          <td>${fmtDate(h.date)}</td>
+          <td>${desc}</td>
+          <td class="num" style="color:${color};font-weight:800">${isAdded ? "+" : "-"}${money(h.amount, currency)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    return `<!DOCTYPE html><html><head><meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, Roboto, Helvetica, Arial, sans-serif; color: #1A1F1C; padding: 28px; }
+        .head { border-bottom: 3px solid #2E7D32; padding-bottom: 14px; margin-bottom: 18px; }
+        .brand { font-size: 20px; font-weight: 800; color: #1B5E20; }
+        .title { font-size: 12px; letter-spacing: 1px; color: #5C6B5F; text-transform: uppercase; margin-top: 4px; }
+        .cust { font-size: 22px; font-weight: 800; margin-top: 8px; }
+        .sub { font-size: 12px; color: #5C6B5F; margin-top: 2px; }
+        .cards { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 18px; }
+        .stat { flex: 1 1 22%; border: 1px solid #E0E8E1; border-radius: 12px; padding: 12px 14px; background: #F4F7F4; }
+        .stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #5C6B5F; font-weight: 700; }
+        .stat .v { font-size: 18px; font-weight: 800; color: #1A1F1C; margin-top: 4px; }
+        h2 { font-size: 14px; margin: 20px 0 8px; color: #1B5E20; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #EAF0EB; }
+        th { background: #E8F5E9; color: #1B5E20; text-transform: uppercase; font-size: 10px; letter-spacing: .4px; }
+        td.num, th.num { text-align: right; }
+        .badge { padding: 3px 9px; border-radius: 999px; font-weight: 700; font-size: 11px; }
+        .empty { color: #5C6B5F; font-style: italic; padding: 8px 2px; }
+        .foot { margin-top: 26px; font-size: 10px; color: #8DA093; border-top: 1px solid #EAF0EB; padding-top: 10px; }
+        tr.total td { font-weight: 800; background: #F4F7F4; border-top: 2px solid #C8E6C9; }
+      </style></head>
+      <body>
+        <div class="head">
+          <div class="brand">${escapeHtml(businessName)}</div>
+          <div class="title">Customer Ledger Statement</div>
+          <div class="cust">${escapeHtml(customer!.name)}</div>
+          <div class="sub">${customer!.phone ? escapeHtml(customer!.phone) : "No phone"} · as on ${dayjs().format("DD MMM YYYY")}</div>
+        </div>
+
+        <div class="cards">
+          <div class="stat"><div class="l">Total Purchased</div><div class="v">${money(totalPurchased, currency)}</div></div>
+          <div class="stat"><div class="l">Total Received</div><div class="v">${money(totalReceived, currency)}</div></div>
+          <div class="stat"><div class="l">Current Pending</div><div class="v" style="color:${pending > 0 ? "#D32F2F" : "#2E7D32"}">${money(pending, currency)}</div></div>
+          <div class="stat"><div class="l">Advance Balance</div><div class="v" style="color:${advance > 0 ? "#2E7D32" : "#1A1F1C"}">${money(advance, currency)}</div></div>
+        </div>
+
+        <h2>Bills / Purchases</h2>
+        ${bills.length === 0 ? '<div class="empty">No bills yet.</div>' : `<table>
+          <thead><tr><th>#</th><th>Date</th><th class="num">Qty (kg)</th><th class="num">Price/kg</th><th class="num">Total</th><th class="num">Received</th><th class="num">Pending</th><th>Status</th></tr></thead>
+          <tbody>${rowsBills}
+            <tr class="total"><td></td><td>TOTAL</td><td class="num">${totalQty}</td><td></td><td class="num">${money(totalPurchased, currency)}</td><td class="num">${money(totalReceived, currency)}</td><td class="num">${money(pending, currency)}</td><td></td></tr>
+          </tbody></table>`}
+
+        <h2>Payments Received</h2>
+        ${payments.length === 0 ? '<div class="empty">No payments recorded.</div>' : `<table>
+          <thead><tr><th>#</th><th>Date</th><th class="num">Amount</th><th>Applied</th></tr></thead>
+          <tbody>${rowsPayments}</tbody></table>`}
+
+        <h2>Advance History</h2>
+        ${advanceHistory.length === 0 ? '<div class="empty">No advance activity.</div>' : `<table>
+          <thead><tr><th>#</th><th>Date</th><th>Detail</th><th class="num">Amount</th></tr></thead>
+          <tbody>${rowsAdvance}</tbody></table>`}
+
+        <div class="foot">Generated by ${escapeHtml(businessName)} · GarlicLedger Pro · ${dayjs().format("DD MMM YYYY, hh:mm A")}</div>
+      </body></html>`;
+  };
+
+  const onExportPdf = async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      await exportHtmlAsPdf(buildLedgerHtml());
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   const openEdit = () => {
     setEditName(customer.name);
@@ -561,6 +697,17 @@ export default function CustomerDetailScreen() {
             style={{ flex: pending > 0 ? undefined : 1, paddingHorizontal: spacing.lg }}
           />
         </View>
+
+        <Button
+          testID="customer-export-pdf"
+          label="Download Statement (PDF)"
+          variant="secondary"
+          onPress={onExportPdf}
+          loading={exportingPdf}
+          fullWidth
+          style={{ marginTop: spacing.sm }}
+          icon={<MaterialCommunityIcons name="file-pdf-box" size={20} color={theme.onBrandTertiary} />}
+        />
 
         {/* Purchases */}
         <View
