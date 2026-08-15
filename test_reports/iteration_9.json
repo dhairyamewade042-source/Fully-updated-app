@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend verification of the Day Report rewrite + Customer PDF (EN/HI) + PDF sizing fix on GarlicLedger Pro (Expo web). Seeded 3 sales for today via New Sale tab (Shabbir 20kg@120 recv 2400 Paid, Ramesh 15kg@120 recv 1000 Partial, Ali 5kg@120 recv 0 Unpaid). Opened /day-report/<today>, verified Customers-only UI (no Purchases/Supplier/Trader/You-Owe), and captured both English and Hindi exports via window.open init-script stub. Both HTMLs contain all required markers, correct totals (Received ₹3,400, Pending ₹1,400), full-width A4 layout (@page A4 + 15mm margin + width:100% wrap; no max-width:800px, no transform:scale). Hindi tbody has NO Latin customer names — only Devanagari ['शब्बीर','रमेश','अली'] — while headers/titles/status words stay in English. 0 page/console errors during the flow.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "NOTE (spec math): The review_request expected Total Sales ₹4,200 for the 3 seeded sales, but the correct arithmetic is 20×120 + 15×120 + 5×120 = ₹4,800. The app computes ₹4,800 which is arithmetically correct and internally consistent (Received ₹3,400 + Pending ₹1,400 = ₹4,800). No app bug — the expected number in the request is off by ₹600. Recommend updating spec/test expectation to ₹4,800."
+  ],
+  "critical_code_review_comments": [
+    "app/day-report/[date].tsx: single-file (~420 lines) still under threshold, cleanly separated logic (report memo) from PDF template (buildCustomerReportHtml). No hardcoded URLs. escapeHtml used consistently.",
+    "PDF CSS correctly uses @page A4 with 15mm margin and .wrap {width:100%}. No fixed max-width and no transform-scale shrink -> sizing fix is verified.",
+    "src/lib/pdf.ts: web export uses window.open with document.write + auto-print; iframe fallback present. Fine for the requirement.",
+    "src/lib/translit.ts: rule-based transliteration produces expected 'शब्बीर'/'रमेश'/'अली'. Approximate by design — acceptable per spec."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A (skipped)", "frontend": "100%" },
+  "seed_data_creation": "Seeded 3 sales for today via UI (Shabbir/Ramesh/Ali). All saved OK.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use page.add_init_script to override window.open before navigation so the isolated tab's document.write is captured into window.__capturedPopup.html. To seed multiple sales sequentially, click [data-testid=tab-sale] BEFORE each seed (onSave calls router.push('/(tabs)'), navigating away). Day report route is /day-report/YYYY-MM-DD. English + Hindi export testids: day-report-export-en / day-report-export-hi. Hindi transliterations to check against: Shabbir->शब्बीर, Ramesh->रमेश, Ali->अली.",
+  "rca of the issue": "No issue found. First seed pass failed because after saving each sale the sale screen redirects to '/(tabs)' via router.push, so subsequent page.fill() on sale-customer targeted a non-visible screen. Fix in test: re-click [data-testid=tab-sale] before each seed. Applied and all 3 seeds went in. This is test-script only; app behavior (post-save redirect + toast) is intentional and fine."
+}

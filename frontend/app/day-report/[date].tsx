@@ -1,5 +1,7 @@
-// Full day report — every bill/customer for a chosen date with status,
-// plus payments collected and purchases that day, and a PDF statement export.
+// Day Report — customer sales for a chosen date (no supplier/purchases).
+// Shows each customer's quantity, bill total, received, pending and status,
+// and exports a professional A4 "Customer Report" PDF in English or Hindi
+// (Hindi transliterates only the customer names into Devanagari).
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
@@ -14,217 +16,251 @@ import { Badge, Body, Button, Card, H2, Label } from "@/src/components/ui";
 import { useApp } from "@/src/context/AppContext";
 import { fmtDate, kg, money } from "@/src/lib/format";
 import { exportHtmlAsPdf } from "@/src/lib/pdf";
-import { fontSize, radius, spacing } from "@/src/lib/theme";
-import { Payment, Sale } from "@/src/lib/types";
+import { fontSize, spacing } from "@/src/lib/theme";
+import { toHindiName } from "@/src/lib/translit";
+import { Sale } from "@/src/lib/types";
 
 const ymd = (s: string) => dayjs(s).format("YYYY-MM-DD");
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 type Status = "Paid" | "Partial" | "Unpaid";
-const statusOf = (s: Sale): Status => {
-  const pending = s.total - s.received;
+const statusFrom = (total: number, received: number): Status => {
+  const pending = total - received;
   if (pending <= 0.0001) return "Paid";
-  if (s.received <= 0.0001) return "Unpaid";
+  if (received <= 0.0001) return "Unpaid";
   return "Partial";
 };
+const statusOf = (s: Sale): Status => statusFrom(s.total, s.received);
 const toneOf = (st: Status): "success" | "warning" | "error" =>
   st === "Paid" ? "success" : st === "Partial" ? "warning" : "error";
 
+const BIZ = {
+  name: "GARLIC HUB",
+  phone: "+91 7509730965",
+  address: "Bercha Road, Dusherra Maidan, Shajapur",
+};
+
 export default function DayReportScreen() {
   const params = useLocalSearchParams<{ date?: string }>();
-  const { theme, data, getCustomer, customerAdvance, customerAdvanceHistory } = useApp();
+  const { theme, data } = useApp();
   const insets = useSafeAreaInsets();
   const currency = data.settings.currency;
 
   const [date, setDate] = useState<string>(
     params.date ? ymd(String(params.date)) : dayjs().format("YYYY-MM-DD"),
   );
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<null | "en" | "hi">(null);
 
   const report = useMemo(() => {
     const sales = data.sales
       .filter((s) => ymd(s.date) === date)
       .sort((a, b) => a.customerName.localeCompare(b.customerName));
-    const payments = data.payments.filter((p) => ymd(p.date) === date);
-    const purchases = data.traderBills.filter((b) => ymd(b.date) === date);
 
-    const totalSales = sales.reduce((a, s) => a + s.total, 0);
-    const totalQty = sales.reduce((a, s) => a + s.quantityKg, 0);
-    const receivedFromSales = sales.reduce((a, s) => a + s.initialReceived, 0);
-    const receivedFromPayments = payments.reduce((a, p) => a + p.amount, 0);
-    const receivedTotal = receivedFromSales + receivedFromPayments;
-    const pendingFromDay = sales.reduce((a, s) => a + Math.max(0, s.total - s.received), 0);
-    const purchaseAmount = purchases.reduce((a, b) => a + b.amount, 0);
-    const customerCount = new Set(sales.map((s) => s.customerId)).size;
+    // Aggregate customer-wise (one row per customer) for the report.
+    const byCust = new Map<
+      string,
+      { id: string; name: string; qty: number; total: number; received: number; pending: number }
+    >();
+    sales.forEach((s) => {
+      const g =
+        byCust.get(s.customerId) ||
+        { id: s.customerId, name: s.customerName, qty: 0, total: 0, received: 0, pending: 0 };
+      g.qty = round2(g.qty + s.quantityKg);
+      g.total = round2(g.total + s.total);
+      g.received = round2(g.received + s.received);
+      g.pending = round2(g.pending + Math.max(0, s.total - s.received));
+      byCust.set(s.customerId, g);
+    });
+    const customerRows = Array.from(byCust.values()).sort((a, b) => a.name.localeCompare(b.name));
 
-    // Advance movements on this day (across all customers) + current advance per customer.
-    let advanceAdded = 0;
-    let advanceUsed = 0;
-    data.customers.forEach((c) => {
-      customerAdvanceHistory(c.id).forEach((h) => {
-        if (ymd(h.date) === date) {
-          if (h.type === "added") advanceAdded += h.amount;
-          else advanceUsed += h.amount;
-        }
-      });
-    });
-    const advanceByCustomer: Record<string, number> = {};
-    Array.from(new Set(sales.map((s) => s.customerId))).forEach((cid) => {
-      advanceByCustomer[cid] = customerAdvance(cid);
-    });
+    const totalSales = round2(sales.reduce((a, s) => a + s.total, 0));
+    const totalQty = round2(sales.reduce((a, s) => a + s.quantityKg, 0));
+    const totalReceived = round2(sales.reduce((a, s) => a + s.received, 0));
+    const totalPending = round2(sales.reduce((a, s) => a + Math.max(0, s.total - s.received), 0));
 
     return {
       sales,
-      payments,
-      purchases,
+      customerRows,
       totalSales,
       totalQty,
-      receivedTotal,
-      pendingFromDay,
-      purchaseAmount,
-      customerCount,
-      advanceAdded: Math.round(advanceAdded * 100) / 100,
-      advanceUsed: Math.round(advanceUsed * 100) / 100,
-      advanceByCustomer,
+      totalReceived,
+      totalPending,
+      customerCount: customerRows.length,
     };
-  }, [data, date, customerAdvance, customerAdvanceHistory]);
+  }, [data, date]);
 
   const dateLabel = fmtDate(date);
-  const businessName = data.settings.businessName;
 
-  const buildHtml = (): string => {
-    const rowsSales = report.sales
-      .map((s, i) => {
-        const st = statusOf(s);
-        const pending = Math.max(0, s.total - s.received);
-        const color = st === "Paid" ? "#2E7D32" : st === "Partial" ? "#8A5A00" : "#D32F2F";
-        const bg = st === "Paid" ? "#E8F5E9" : st === "Partial" ? "#FFF3CD" : "#FDECEA";
-        return `<tr>
-          <td>${i + 1}</td>
-          <td><b>${escapeHtml(s.customerName)}</b></td>
-          <td class="num">${s.quantityKg}</td>
-          <td class="num">${money(s.pricePerKg, currency)}</td>
-          <td class="num">${money(s.total, currency)}</td>
-          <td class="num">${money(s.received, currency)}</td>
-          <td class="num">${money(pending, currency)}</td>
-          <td><span class="badge" style="color:${color};background:${bg}">${st}</span></td>
-        </tr>`;
-      })
-      .join("");
+  const buildCustomerReportHtml = (lang: "en" | "hi"): string => {
+    const generatedOn = dayjs().format("DD MMM YYYY, hh:mm A");
 
-    const rowsPayments = report.payments
-      .map((p: Payment, i) => {
-        const c = getCustomer(p.customerId);
-        return `<tr>
-          <td>${i + 1}</td>
-          <td><b>${escapeHtml(c?.name || "Unknown")}</b></td>
-          <td class="num">${money(p.amount, currency)}</td>
-        </tr>`;
-      })
-      .join("");
+    const garlicLogo = `
+      <svg viewBox="0 0 64 64" width="34" height="34" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M32 5 C34 11 30 13 33 18" stroke="#FFFFFF" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <path d="M32 16 C19 16 15 30 15 40 C15 52 23 59 32 59 C41 59 49 52 49 40 C49 30 45 16 32 16 Z" fill="#FFFFFF"/>
+        <path d="M32 17 C30 31 30 46 32 58" stroke="#1B5E20" stroke-width="1.6" fill="none"/>
+        <path d="M24 20 C21 33 21 47 26 57" stroke="#1B5E20" stroke-width="1.4" fill="none"/>
+        <path d="M40 20 C43 33 43 47 38 57" stroke="#1B5E20" stroke-width="1.4" fill="none"/>
+      </svg>`;
 
-    const rowsPurchases = report.purchases
-      .map((b, i) => {
-        const st = b.paid ? "Paid" : "Unpaid";
-        const color = b.paid ? "#2E7D32" : "#D32F2F";
-        const bg = b.paid ? "#E8F5E9" : "#FDECEA";
-        return `<tr>
-          <td>${i + 1}</td>
-          <td><b>${escapeHtml(b.traderName)}</b></td>
-          <td class="num">${money(b.amount, currency)}</td>
-          <td><span class="badge" style="color:${color};background:${bg}">${st}</span></td>
-        </tr>`;
-      })
-      .join("");
+    const badge = (st: Status) => {
+      const color = st === "Paid" ? "#1B5E20" : st === "Partial" ? "#8A5A00" : "#B3261E";
+      const bg = st === "Paid" ? "#E8F5E9" : st === "Partial" ? "#FFF3CD" : "#FDECEA";
+      return `<span class="badge" style="color:${color};background:${bg}">${st}</span>`;
+    };
 
-    const advCustomers = Array.from(new Set(report.sales.map((s) => s.customerId)))
-      .map((cid) => ({
-        name: getCustomer(cid)?.name || "Unknown",
-        adv: report.advanceByCustomer[cid] || 0,
-      }))
-      .filter((x) => x.adv > 0.0001);
-    const rowsAdvance = advCustomers
-      .map(
-        (x, i) =>
-          `<tr><td>${i + 1}</td><td><b>${escapeHtml(x.name)}</b></td><td class="num">${money(x.adv, currency)}</td></tr>`,
-      )
-      .join("");
+    const rows =
+      report.customerRows.length === 0
+        ? `<tr><td colspan="7" class="empty">No customer transactions on this day.</td></tr>`
+        : report.customerRows
+            .map((r, i) => {
+              const st = statusFrom(r.total, r.received);
+              const displayName = lang === "hi" ? toHindiName(r.name) : r.name;
+              return `<tr>
+                <td class="c-idx">${i + 1}</td>
+                <td class="c-name">${escapeHtml(displayName)}</td>
+                <td class="num">${kg(r.qty)}</td>
+                <td class="num">${money(r.total, currency)}</td>
+                <td class="num c-recv">${money(r.received, currency)}</td>
+                <td class="num c-pend">${money(r.pending, currency)}</td>
+                <td class="c-status">${badge(st)}</td>
+              </tr>`;
+            })
+            .join("");
 
-    return `<!DOCTYPE html><html><head><meta charset="utf-8" />
+    return `<!DOCTYPE html><html lang="${lang}"><head><meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <style>
+        @page { size: A4 portrait; margin: 15mm; }
         * { box-sizing: border-box; }
-        body { font-family: -apple-system, Roboto, Helvetica, Arial, sans-serif; color: #1A1F1C; padding: 28px; }
-        .head { border-bottom: 3px solid #2E7D32; padding-bottom: 14px; margin-bottom: 18px; }
-        .brand { font-size: 22px; font-weight: 800; color: #1B5E20; }
-        .title { font-size: 13px; letter-spacing: 1px; color: #5C6B5F; text-transform: uppercase; margin-top: 4px; }
-        .date { font-size: 16px; font-weight: 700; margin-top: 6px; }
-        .cards { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 22px; }
-        .stat { flex: 1 1 30%; border: 1px solid #E0E8E1; border-radius: 12px; padding: 12px 14px; background: #F4F7F4; }
+        html, body { margin: 0; padding: 0; }
+        body {
+          font-family: "Helvetica Neue", Helvetica, Arial, "Segoe UI", Roboto,
+            "Noto Sans Devanagari", "Mangal", sans-serif;
+          color: #1E2B22; font-size: 13px; line-height: 1.5;
+          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        }
+        .wrap { width: 100%; }
+
+        .letterhead { text-align: center; padding-bottom: 12px; border-bottom: 2.5px solid #1B5E20; }
+        .badge-logo {
+          width: 48px; height: 48px; border-radius: 50%; background: #1B5E20;
+          display: inline-flex; align-items: center; justify-content: center; margin-bottom: 6px;
+        }
+        .biz-name { font-size: 24px; font-weight: 800; color: #1B5E20; letter-spacing: 1.5px; }
+        .biz-contact { font-size: 12px; color: #4B5A4F; margin-top: 4px; line-height: 1.55; }
+
+        .title-row {
+          display: flex; justify-content: space-between; align-items: baseline;
+          margin: 16px 0 12px;
+        }
+        .doc-title { font-size: 15px; font-weight: 800; color: #1B5E20; letter-spacing: 1px; text-transform: uppercase; }
+        .doc-date { font-size: 14px; font-weight: 700; color: #1E2B22; }
+
+        .cards { display: flex; gap: 12px; margin-bottom: 16px; }
+        .stat { flex: 1; border: 1px solid #D6E2D9; border-radius: 8px; padding: 12px 14px; background: #F5F8F5; }
         .stat .l { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #5C6B5F; font-weight: 700; }
-        .stat .v { font-size: 20px; font-weight: 800; color: #1A1F1C; margin-top: 4px; }
-        h2 { font-size: 15px; margin: 22px 0 8px; color: #1B5E20; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #EAF0EB; }
-        th { background: #E8F5E9; color: #1B5E20; text-transform: uppercase; font-size: 10px; letter-spacing: .4px; }
-        td.num, th.num { text-align: right; }
-        .badge { padding: 3px 9px; border-radius: 999px; font-weight: 700; font-size: 11px; }
-        .empty { color: #5C6B5F; font-style: italic; padding: 8px 2px; }
-        .foot { margin-top: 26px; font-size: 10px; color: #8DA093; border-top: 1px solid #EAF0EB; padding-top: 10px; }
-        tr.total td { font-weight: 800; background: #F4F7F4; border-top: 2px solid #C8E6C9; }
+        .stat .v { font-size: 20px; font-weight: 800; margin-top: 4px; }
+        .stat.sales .v { color: #1E2B22; }
+        .stat.recv .v { color: #1B5E20; }
+        .stat.pend .v { color: #B3261E; }
+
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+          background: #1B5E20; color: #fff; font-size: 12px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: .3px; padding: 9px 10px;
+          border: 1px solid #145018; text-align: left;
+        }
+        tbody td { padding: 9px 10px; border: 1px solid #D6E2D9; font-size: 13px; vertical-align: middle; }
+        tbody tr:nth-child(even) td { background: #F5F8F5; }
+        .num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .c-idx, th.c-idx { text-align: center; width: 6%; }
+        .c-status, th.c-status { text-align: center; width: 12%; }
+        .c-name { font-weight: 700; }
+        .c-recv { color: #1B5E20; font-weight: 700; }
+        .c-pend { color: #B3261E; font-weight: 700; }
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 11px; }
+        .empty { text-align: center; color: #5C6B5F; font-style: italic; padding: 18px 10px !important; }
+        tr { page-break-inside: avoid; }
+        tr.totals td {
+          background: #EAF3EC; font-weight: 800; border-top: 2px solid #1B5E20; font-size: 13.5px;
+        }
+        tr.totals .c-recv { color: #1B5E20; }
+        tr.totals .c-pend { color: #B3261E; }
+
+        .foot {
+          margin-top: 20px; padding-top: 12px; border-top: 1.5px solid #1B5E20;
+          text-align: center; color: #4B5A4F; font-size: 11px; line-height: 1.6;
+          page-break-inside: avoid;
+        }
+        .foot .biz { font-weight: 700; color: #1B5E20; letter-spacing: .3px; }
+        .foot .thanks { margin-top: 4px; font-weight: 700; color: #1B5E20; }
       </style></head>
       <body>
-        <div class="head">
-          <div class="brand">${escapeHtml(businessName)}</div>
-          <div class="title">Daily Statement</div>
-          <div class="date">${dateLabel}</div>
+        <div class="wrap">
+          <div class="letterhead">
+            <div class="badge-logo">${garlicLogo}</div>
+            <div class="biz-name">${escapeHtml(BIZ.name)}</div>
+            <div class="biz-contact">${escapeHtml(BIZ.phone)}<br/>${escapeHtml(BIZ.address)}</div>
+          </div>
+
+          <div class="title-row">
+            <div class="doc-title">Customer Day Report</div>
+            <div class="doc-date">${dateLabel}</div>
+          </div>
+
+          <div class="cards">
+            <div class="stat sales"><div class="l">Total Sales</div><div class="v">${money(report.totalSales, currency)}</div></div>
+            <div class="stat recv"><div class="l">Total Received</div><div class="v">${money(report.totalReceived, currency)}</div></div>
+            <div class="stat pend"><div class="l">Total Pending</div><div class="v">${money(report.totalPending, currency)}</div></div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th class="c-idx">#</th>
+                <th>Customer</th>
+                <th class="num">Quantity</th>
+                <th class="num">Total</th>
+                <th class="num">Received</th>
+                <th class="num">Pending</th>
+                <th class="c-status">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+              ${
+                report.customerRows.length === 0
+                  ? ""
+                  : `<tr class="totals">
+                      <td></td>
+                      <td>TOTAL</td>
+                      <td class="num">${kg(report.totalQty)}</td>
+                      <td class="num">${money(report.totalSales, currency)}</td>
+                      <td class="num c-recv">${money(report.totalReceived, currency)}</td>
+                      <td class="num c-pend">${money(report.totalPending, currency)}</td>
+                      <td></td>
+                    </tr>`
+              }
+            </tbody>
+          </table>
+
+          <div class="foot">
+            <div class="biz">${escapeHtml(BIZ.name)} | ${escapeHtml(BIZ.phone)} | ${escapeHtml(BIZ.address)}</div>
+            <div>Report generated on ${generatedOn}</div>
+            <div class="thanks">Thank you for your business!</div>
+          </div>
         </div>
-
-        <div class="cards">
-          <div class="stat"><div class="l">Total Sales</div><div class="v">${money(report.totalSales, currency)}</div></div>
-          <div class="stat"><div class="l">Quantity Sold</div><div class="v">${kg(report.totalQty)}</div></div>
-          <div class="stat"><div class="l">Bills</div><div class="v">${report.sales.length}</div></div>
-          <div class="stat"><div class="l">Customers</div><div class="v">${report.customerCount}</div></div>
-          <div class="stat"><div class="l">Received</div><div class="v">${money(report.receivedTotal, currency)}</div></div>
-          <div class="stat"><div class="l">Pending (this day)</div><div class="v">${money(report.pendingFromDay, currency)}</div></div>
-          <div class="stat"><div class="l">Advance Added</div><div class="v">${money(report.advanceAdded, currency)}</div></div>
-          <div class="stat"><div class="l">Advance Used</div><div class="v">${money(report.advanceUsed, currency)}</div></div>
-        </div>
-
-        <h2>Sales / Bills</h2>
-        ${report.sales.length === 0 ? '<div class="empty">No sales recorded on this day.</div>' : `<table>
-          <thead><tr><th>#</th><th>Customer</th><th class="num">Qty (kg)</th><th class="num">Price/kg</th><th class="num">Total</th><th class="num">Received</th><th class="num">Pending</th><th>Status</th></tr></thead>
-          <tbody>${rowsSales}
-            <tr class="total"><td></td><td>TOTAL</td><td class="num">${report.totalQty}</td><td></td><td class="num">${money(report.totalSales, currency)}</td><td></td><td class="num">${money(report.pendingFromDay, currency)}</td><td></td></tr>
-          </tbody></table>`}
-
-        <h2>Payments Collected</h2>
-        ${report.payments.length === 0 ? '<div class="empty">No separate payments collected on this day.</div>' : `<table>
-          <thead><tr><th>#</th><th>Customer</th><th class="num">Amount</th></tr></thead>
-          <tbody>${rowsPayments}</tbody></table>`}
-
-        <h2>Purchases (You Owe Traders)</h2>
-        ${report.purchases.length === 0 ? '<div class="empty">No purchase bills on this day.</div>' : `<table>
-          <thead><tr><th>#</th><th>Trader</th><th class="num">Amount</th><th>Status</th></tr></thead>
-          <tbody>${rowsPurchases}
-            <tr class="total"><td></td><td>TOTAL</td><td class="num">${money(report.purchaseAmount, currency)}</td><td></td></tr>
-          </tbody></table>`}
-
-        <h2>Advance Balances (current)</h2>
-        ${advCustomers.length === 0 ? '<div class="empty">No customer has an advance balance.</div>' : `<table>
-          <thead><tr><th>#</th><th>Customer</th><th class="num">Advance</th></tr></thead>
-          <tbody>${rowsAdvance}</tbody></table>`}
-
-        <div class="foot">Generated by ${escapeHtml(businessName)} · GarlicLedger Pro · ${dayjs().format("DD MMM YYYY, hh:mm A")}</div>
       </body></html>`;
   };
 
-  const onExport = async () => {
+  const onExport = async (lang: "en" | "hi") => {
     if (exporting) return;
-    setExporting(true);
+    setExporting(lang);
     try {
-      await exportHtmlAsPdf(buildHtml());
+      await exportHtmlAsPdf(buildCustomerReportHtml(lang));
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
@@ -233,7 +269,7 @@ export default function DayReportScreen() {
       <Label>{label}</Label>
       <Text
         style={{
-          color: tone === "pending" && report.pendingFromDay > 0 ? theme.error : theme.onSurface,
+          color: tone === "pending" && report.totalPending > 0 ? theme.error : theme.onSurface,
           fontSize: fontSize.xl,
           fontWeight: "800",
           marginTop: 2,
@@ -248,30 +284,26 @@ export default function DayReportScreen() {
     <View style={{ flex: 1, backgroundColor: theme.surface }} testID="day-report-screen">
       <ScreenHeader title="Day Report" subtitle={dateLabel} showBack />
       <ScrollView
-        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 140 + insets.bottom }}
+        contentContainerStyle={{ padding: spacing.lg, paddingBottom: 180 + insets.bottom }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Date picker */}
         <Label>Report Date</Label>
         <View style={{ marginTop: spacing.sm }}>
           <DateField label="" value={date} onChange={setDate} testID="day-report-date" />
         </View>
 
-        {/* Summary grid */}
+        {/* Customer summary */}
         <View style={styles.grid}>
           <Stat label="Total Sales" value={money(report.totalSales, currency)} />
           <Stat label="Quantity" value={kg(report.totalQty)} />
-          <Stat label="Bills" value={String(report.sales.length)} />
           <Stat label="Customers" value={String(report.customerCount)} />
-          <Stat label="Received" value={money(report.receivedTotal, currency)} />
-          <Stat label="Pending" value={money(report.pendingFromDay, currency)} tone="pending" />
-          <Stat label="Advance Added" value={money(report.advanceAdded, currency)} />
-          <Stat label="Advance Used" value={money(report.advanceUsed, currency)} />
+          <Stat label="Received" value={money(report.totalReceived, currency)} />
+          <Stat label="Pending" value={money(report.totalPending, currency)} tone="pending" />
         </View>
 
-        {/* Sales list */}
-        <H2 style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>Customers &amp; Bills</H2>
-        {report.sales.length === 0 ? (
+        {/* Customers list */}
+        <H2 style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>Customers</H2>
+        {report.customerRows.length === 0 ? (
           <Card style={{ alignItems: "center", paddingVertical: spacing.xl }}>
             <MaterialCommunityIcons
               name="cart-off"
@@ -279,24 +311,20 @@ export default function DayReportScreen() {
               color={theme.muted}
               style={{ marginBottom: spacing.sm }}
             />
-            <Body muted>No sales on this day</Body>
+            <Body muted>No customer sales on this day</Body>
           </Card>
         ) : (
-          report.sales.map((s) => {
-            const st = statusOf(s);
-            const pending = Math.max(0, s.total - s.received);
+          report.customerRows.map((r) => {
+            const st = statusFrom(r.total, r.received);
             return (
-              <Card key={s.id} style={{ marginBottom: spacing.sm }} testID={`day-report-sale-${s.id}`}>
+              <Card key={r.id} style={{ marginBottom: spacing.sm }} testID={`day-report-customer-${r.id}`}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: theme.onSurface, fontSize: fontSize.lg, fontWeight: "700" }}>
-                      {s.customerName}
+                      {r.name}
                     </Text>
                     <Text style={{ color: theme.muted, fontSize: fontSize.sm, marginTop: 2 }}>
-                      {kg(s.quantityKg)} × {money(s.pricePerKg, currency)}
-                      {report.advanceByCustomer[s.customerId] > 0.0001
-                        ? ` · Advance ${money(report.advanceByCustomer[s.customerId], currency)}`
-                        : ""}
+                      {kg(r.qty)}
                     </Text>
                   </View>
                   <Badge label={st} tone={toneOf(st)} />
@@ -304,18 +332,18 @@ export default function DayReportScreen() {
                 <View style={styles.billRow}>
                   <View style={{ flex: 1 }}>
                     <Label>Total</Label>
-                    <Text style={styles.billVal}>{money(s.total, currency)}</Text>
+                    <Text style={styles.billVal}>{money(r.total, currency)}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Label>Received</Label>
                     <Text style={[styles.billVal, { color: theme.brandPrimary }]}>
-                      {money(s.received, currency)}
+                      {money(r.received, currency)}
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Label>Pending</Label>
-                    <Text style={[styles.billVal, { color: pending > 0 ? theme.error : theme.onSurface }]}>
-                      {money(pending, currency)}
+                    <Text style={[styles.billVal, { color: r.pending > 0 ? theme.error : theme.onSurface }]}>
+                      {money(r.pending, currency)}
                     </Text>
                   </View>
                 </View>
@@ -323,47 +351,9 @@ export default function DayReportScreen() {
             );
           })
         )}
-
-        {/* Payments collected */}
-        {report.payments.length > 0 ? (
-          <>
-            <H2 style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>Payments Collected</H2>
-            {report.payments.map((p) => {
-              const c = getCustomer(p.customerId);
-              return (
-                <Card key={p.id} style={{ marginBottom: spacing.sm, flexDirection: "row", alignItems: "center" }}>
-                  <Text style={{ flex: 1, color: theme.onSurface, fontSize: fontSize.lg, fontWeight: "700" }}>
-                    {c?.name || "Unknown"}
-                  </Text>
-                  <Text style={{ color: theme.brandPrimary, fontSize: fontSize.lg, fontWeight: "800" }}>
-                    {money(p.amount, currency)}
-                  </Text>
-                </Card>
-              );
-            })}
-          </>
-        ) : null}
-
-        {/* Purchases */}
-        {report.purchases.length > 0 ? (
-          <>
-            <H2 style={{ marginTop: spacing.xl, marginBottom: spacing.md }}>Purchases</H2>
-            {report.purchases.map((b) => (
-              <Card key={b.id} style={{ marginBottom: spacing.sm, flexDirection: "row", alignItems: "center" }}>
-                <Text style={{ flex: 1, color: theme.onSurface, fontSize: fontSize.lg, fontWeight: "700" }}>
-                  {b.traderName}
-                </Text>
-                <Text style={{ color: theme.onSurface, fontSize: fontSize.lg, fontWeight: "800", marginRight: spacing.md }}>
-                  {money(b.amount, currency)}
-                </Text>
-                <Badge label={b.paid ? "Paid" : "Unpaid"} tone={b.paid ? "success" : "error"} />
-              </Card>
-            ))}
-          </>
-        ) : null}
       </ScrollView>
 
-      {/* Sticky export button */}
+      {/* Sticky export buttons */}
       <View
         style={{
           paddingHorizontal: spacing.lg,
@@ -372,15 +362,27 @@ export default function DayReportScreen() {
           backgroundColor: theme.surface,
           borderTopWidth: 1,
           borderTopColor: theme.divider,
+          gap: spacing.sm,
         }}
       >
         <Button
-          label="Export PDF Statement"
-          onPress={onExport}
-          loading={exporting}
+          label="Export PDF — English"
+          onPress={() => onExport("en")}
+          loading={exporting === "en"}
+          disabled={!!exporting}
           fullWidth
-          testID="day-report-export-pdf"
+          testID="day-report-export-en"
           icon={<MaterialCommunityIcons name="file-pdf-box" size={22} color={theme.onBrandPrimary} />}
+        />
+        <Button
+          label="Export PDF — Hindi"
+          onPress={() => onExport("hi")}
+          loading={exporting === "hi"}
+          disabled={!!exporting}
+          variant="secondary"
+          fullWidth
+          testID="day-report-export-hi"
+          icon={<MaterialCommunityIcons name="file-pdf-box" size={22} color={theme.onBrandTertiary} />}
         />
       </View>
     </View>

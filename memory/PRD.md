@@ -78,3 +78,10 @@ Redesigned ONLY `buildLedgerHtml()` in `app/customer/[id].tsx` (export mechanism
 - Colour coding: Debit red-bold, Credit green-bold; Dr./Cr. column red for Dr / green for Cr; Balance red when Dr (outstanding) / green when Cr (advance). Empty cells show a muted "—".
 - Page size changed from A4 to mobile (100mm x 170mm portrait) with compact fonts/padding; customer & summary blocks stack vertically; header/summary/footer/running-balance logic unchanged and fully dynamic.
 - Verified: mobile-width visual render (correct layout + colours) and bundle live-check (Particulars removed, colour classes + 100mm page present). Export mechanism unchanged (isolated-tab, verified earlier in iteration_8).
+
+## Update (2026-08-15) — Day Report: customers-only + Customer Report PDF (EN/HI) + A4 sizing fix
+- Day Report screen (`app/day-report/[date].tsx`) rewritten: shows CUSTOMERS ONLY (per-customer aggregation: Name, Quantity, Total, Received, Pending, Status Paid/Partial/Unpaid). Removed the Purchases/Supplier ("You Owe Traders") section entirely. Summary shows Total Sales / Received / Pending.
+- New "Customer Day Report" PDF containing ONLY customer transactions: GARLIC HUB letterhead (+91 7509730965, Bercha Road, Dusherra Maidan, Shajapur), report date, customer-wise table, and Total Sales / Total Received / Total Pending. Two buttons: `day-report-export-en` (English) and `day-report-export-hi` (Hindi).
+- Hindi export: only customer NAMES transliterated to Devanagari via new `src/lib/translit.ts` `toHindiName()` (phonetic, rule-based; Shabbir→शब्बीर verified). No English name shown alongside; everything else stays English.
+- PDF SIZING FIX: switched to full-width A4 — `@page A4` + 15mm margins + `.wrap {width:100%}`, no max-width/transform-scale → content fills ~90-95% of the printable page (no more tiny/centered), footer flows on the same page (no extra footer page).
+- Verified end-to-end by testing agent (iteration_9.json, 100%): customers-only screen, no supplier content, EN/HI exports, Devanagari names, totals correct (₹4,800 sales / ₹3,400 received / ₹1,400 pending), A4 sizing asserted, 0 errors.
