@@ -85,3 +85,10 @@ Redesigned ONLY `buildLedgerHtml()` in `app/customer/[id].tsx` (export mechanism
 - Hindi export: only customer NAMES transliterated to Devanagari via new `src/lib/translit.ts` `toHindiName()` (phonetic, rule-based; Shabbir→शब्बीर verified). No English name shown alongside; everything else stays English.
 - PDF SIZING FIX: switched to full-width A4 — `@page A4` + 15mm margins + `.wrap {width:100%}`, no max-width/transform-scale → content fills ~90-95% of the printable page (no more tiny/centered), footer flows on the same page (no extra footer page).
 - Verified end-to-end by testing agent (iteration_9.json, 100%): customers-only screen, no supplier content, EN/HI exports, Devanagari names, totals correct (₹4,800 sales / ₹3,400 received / ₹1,400 pending), A4 sizing asserted, 0 errors.
+
+## Bug fix (2026-08-15) — Accurate Hindi transliteration of customer names in PDF
+- Problem: phonetic-only engine produced wrong Devanagari (e.g. Imran→इमरन, Salman→सल्मन).
+- Fix (`src/lib/translit.ts`): two-stage `toHindiName()` — (1) curated NAME_MAP dictionary of common Indian names (Hindu/Muslim/Sikh/regional first names + surnames + Mohd/Md→मोहम्मद), (2) improved phonetic fallback (nasal→anusvara ं, gemination halant, short-i default) for unknown names. Per-word lookup preserves spacing.
+- Required examples now exact: Shabbir→शब्बीर, Imran→इमरान, Ramesh→रमेश, Arif→आरिफ, Salman→सलमान, Mohd→मोहम्मद.
+- Only customer names change in the Hindi PDF; all other text (headings, table headers, Paid/Partial/Unpaid, dates, amounts, GARLIC HUB name/phone/address) stays English. English PDF unchanged.
+- Verified by testing agent (iteration_10.json, 100%): 6 exact Devanagari names present, no Latin names in Hindi tbody, rest English, English PDF regression OK, 0 errors.

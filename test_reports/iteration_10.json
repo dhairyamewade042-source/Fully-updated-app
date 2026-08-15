@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only verification of the Hindi customer-name transliteration fix in GarlicLedger Pro (Expo web). Seeded 6 sales for today (Shabbir 20kg@120 recv 2400, Imran 10kg@120 recv 0, Arif 5kg@120 recv 600, Salman 8kg@120 recv 500, Mohd 4kg@120 recv 480, Ramesh 15kg@120 recv 1000) via New Sale (clicking tab-sale before EACH save), opened /day-report/<today>, and captured both PDF exports by stubbing window.open (with document.open/write/close + print) via page.add_init_script. HINDI PDF: table body contains the exact required Devanagari names — शब्बीर, इमरान, आरिफ, सलमान, मोहम्मद, रमेश — and NONE of the Latin forms Shabbir/Imran/Arif/Salman/Mohd/Ramesh appear in tbody. Everything else in the Hindi HTML stays English: 'GARLIC HUB', '+91 7509730965', 'Bercha Road, Dusherra Maidan, Shajapur', 'Customer Day Report', headers Customer/Quantity/Total/Received/Pending/Status, summary labels Total Sales/Total Received/Total Pending, and status words Paid/Partial/Unpaid; amounts still in ₹ digits. ENGLISH PDF regression: tbody shows Roman names only (no Devanagari). Day Report screen remains visible after both exports; 0 page errors and 0 console errors during the flow.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "src/lib/translit.ts (~160 lines): clean two-stage design — curated NAME_MAP first, then phonetic engine with anusvara + gemination + digraph handling. All 6 spec names are dictionary entries producing the exact expected Devanagari. Good separation, no external deps, deterministic and offline.",
+    "Phonetic fallback is intentionally approximate; unknown names may still be imperfect but no spec case relies on it. Acceptable.",
+    "app/day-report/[date].tsx buildCustomerReportHtml('hi'): only the customer-name <td> is transliterated; every other literal (headings, table headers, status labels, summary labels, business identity) stays as English string. Matches the spec strictly (names-only translation, no English name shown alongside).",
+    "PDF business identity is hard-coded in the day-report file (BIZ = { GARLIC HUB / +91 7509730965 / Bercha Road, Dusherra Maidan, Shajapur }) independent of the user's settings.businessName. That is what the spec requires for the report header, but worth flagging that the dashboard business name (from settings) is not used by the PDF header by design.",
+    "src/lib/pdf.ts still relies on window.open+document.write with an iframe fallback. Fine for web export; the app surfaces an error toast if the popup path fails (observed once in an early run when the test stub was missing document.open). No product bug — test stub fixed."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "N/A (skipped)", "frontend": "100%" },
+  "test_credentials": "None required (offline app).",
+  "seed_data_creation": "Seeded 6 sales for today via UI: Shabbir/Imran/Arif/Salman/Mohd/Ramesh (all @₹120/kg, received amounts as per spec).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "To capture the exported PDF HTML, install window.open stub via page.add_init_script BEFORE navigation; the stub's fake document must implement open()/write()/close() (pdf.ts calls document.open() then document.write() then document.close()). Also stub print() to a counter. LocalStorage does NOT persist across separate browser_automation calls, so seed + export must run in the same script. Click [data-testid=tab-sale] before EACH sale save (onSave redirects to /(tabs)). Day report route: /day-report/YYYY-MM-DD (today only shows today's sales). Export testids: day-report-export-en, day-report-export-hi. Hindi name assertions: Shabbir→शब्बीर, Imran→इमरान, Arif→आरिफ, Salman→सलमान, Mohd→मोहम्मद, Ramesh→रमेश.",
+  "rca of the issue": "No product issue. Prior-iteration transliteration only had a handful of dictionary entries and the phonetic engine produced sub-optimal forms like इमरन/सल्मन. The fix in src/lib/translit.ts adds a broad curated NAME_MAP (hundreds of Indian/Muslim/Hindu/Sikh first names + surnames + Mohd/Md abbreviations mapped to मोहम्मद) so lookups short-circuit the phonetic engine; the 6 spec names all hit the dictionary and now render exactly as required. All non-name literals in the Hindi PDF template are plain English strings, so they naturally remain unchanged."
+}
