@@ -48,6 +48,7 @@ Backend supervisor stays idle/FATAL because there is no backend — this is expe
 - Added dependency: `expo-print@~15.0.8`.
 
 - 2026-08-15: **Advance Balance** in the customer payment system. New pure engine `src/lib/ledger.ts` (`computeCustomerLedger`) — FIFO oldest-first; a bill's own `initialReceived` pays itself first, any overpayment (from a sale OR a payment) becomes **advance credit** that auto-applies to future bills oldest-first. `AppContext` now uses this engine in `rebuildCustomerLedger` and exposes `customerAdvance(id)` + `customerAdvanceHistory(id)`; `addSale`/`updateSale` no longer clamp `initialReceived` to the bill total. UI: New Sale + Receive Payment allow overpay and show the advance saved; customer profile shows an **Advance Balance** card + **Advance History** (added/used, date, related bill); Day Report shows Advance Added/Used and an Advance Balances section in the PDF. Verified 100% (all spec examples + FIFO regression). Existing data/features unaffected (advance is fully derived, no schema migration).
+- 2026-08-15: **FIFO fix** — money a customer pays now clears the OLDEST bill first, including amounts typed into New Sale's "Amount Received" (previously that stuck to its own bill, leaving an older bill wrongly pending). `src/lib/ledger.ts` now routes every incoming amount through a single oldest-first `allocate()`; pre-existing advance drains first. Verified: three ₹240 bills (10/13/15 Aug) + ₹650 received → 10 & 13 Aug PAID, ₹70 pending on 15 Aug (newest).
 
 ## Backlog / Next
 - Continue feature work as requested by user.

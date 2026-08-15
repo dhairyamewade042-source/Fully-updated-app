@@ -1,0 +1,43 @@
+{
+  "summary": "Verified the FIFO bug-fix on GarlicLedger Pro (RN-Web/Expo). All 4 scenarios in the review request passed exactly. Cleared IndexedDB first, then created fresh customers via UI with backdated sales (Aug 2026) using the sale-date calendar picker. The primary bug — 13 Aug wrongly Pending while 15 Aug PAID — no longer reproduces: money now allocates oldest-first across ALL incoming amounts including sale.initialReceived.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "scenario_results": {
+    "PRIMARY_ShabbirTest_FIFO": {
+      "input": "3 bills of ₹240 (10/13/15 Aug 2026) with received 240/170/240 (total 650)",
+      "observed": {"pending": "₹70", "advance": "₹0", "bills": ["10 Aug PAID", "13 Aug PAID", "15 Aug Pending ₹70"], "advance_history": []},
+      "expected": {"pending": "₹70", "advance": "₹0", "bills": ["10 Aug PAID", "13 Aug PAID", "15 Aug Pending ₹70"]},
+      "pass": true
+    },
+    "FifoPay_separate_payment": {
+      "input": "10 Aug ₹100 received 0; 12 Aug ₹100 received 0; then Receive Payment ₹150",
+      "observed": {"pending": "₹50", "advance": "₹0", "bills": ["10 Aug PAID", "12 Aug Pending ₹50"]},
+      "pass": true
+    },
+    "AdvKeep_overpay_both": {
+      "input": "10 Aug ₹100 received 100; 11 Aug ₹120 received 200 (total received 300, billed 220)",
+      "observed": {"pending": "₹0", "advance": "₹80", "bills": ["10 Aug PAID", "11 Aug PAID"], "advance_history": ["+₹80 Added from overpaid bill (11 Aug)"]},
+      "pass": true
+    },
+    "AdvNext_advance_auto_applied": {
+      "input": "10 Aug ₹50 received 100 (₹50 advance); 11 Aug ₹120 received 0",
+      "observed": {"pending": "₹70", "advance": "₹0", "bills": ["10 Aug PAID", "11 Aug Pending ₹70"], "advance_history": ["-₹50 Used on bill (11 Aug)", "+₹50 Added from overpaid bill (10 Aug)"]},
+      "pass": true
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ledger.ts computeCustomerLedger is correct: events sorted by (date, createdAt) then a single FIFO allocate() applies to ALL incoming money (sale.initialReceived AND payment.amount), with pre-existing advance applied first via applyAdvance(). Rounding uses EPS=0.0001 with round2, consistent throughout.",
+    "The intentional behaviour reversal from iteration 4 (own-bill money can now overflow to earlier open bills) is implemented cleanly and matches the product spec.",
+    "Only pre-existing console noise: RN-Web 'props.pointerEvents is deprecated' and Animated 'useNativeDriver' warnings — no uncaught errors, no red-box screens observed."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (no backend)", "frontend": "100%"},
+  "test_credentials": "N/A - no auth",
+  "seed_data_creation": "Created via UI in a freshly cleared IndexedDB: ShabbirTest (3 sales), FifoPay (2 sales + 1 receive payment), AdvKeep (2 sales), AdvNext (2 sales). Data lives inside the Playwright browser context only.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The FIFO oldest-first allocation is verified end-to-end. Backdating via sale-date picker: click the picker, then use the chevron pressables around the 'Month YYYY' header text to navigate months (each chevron is a Pressable child of the header row); click day by exact text. Preview URL: https://c279fd0a-4b5e-4b02-92f3-0eb50cfd6b48.preview.emergentagent.com. Clear IndexedDB via evaluate before each fresh scenario. Use unique customer names to avoid indexeddb collisions.",
+  "rca of the issue": "Original bug: sale.initialReceived was applied to its own bill only, so a partially-paid newer sale could sit as PAID while an older bill remained pending. Fix in /app/frontend/src/lib/ledger.ts: the engine now flows every incoming money event (sale-initial-received + separate payment) through a single allocate() that consumes open bills insertion-ordered (== chronological FIFO), with any leftover becoming advance. Pre-existing advance is drained via applyAdvance() before the new bill's own received is allocated. Verified via ShabbirTest: 240+170+240=650 -> 10 Aug fills 240 (paid), 13 Aug fills 240 (paid), 15 Aug fills 170 (Pending ₹70) — exactly matching expected FIFO output."
+}

@@ -1,14 +1,20 @@
 // Advance-aware customer ledger engine (pure, single source of truth).
 //
-// Money the customer hands over (a bill's `initialReceived` and every `payment.amount`)
-// is applied to that customer's bills oldest-first (FIFO). Any leftover money that no
-// open bill can absorb becomes the customer's ADVANCE BALANCE (a running credit).
-// When a new bill is created, available advance is auto-applied to it (oldest bill first).
+// EVERY rupee a customer hands over — whether entered as a bill's `initialReceived`
+// or as a separate `payment` — is applied to that customer's bills OLDEST-FIRST (FIFO).
+// So a payment/received amount always clears the oldest outstanding bill before newer
+// ones, regardless of which bill it was typed against.
+//
+// Any money that no open bill can absorb becomes the customer's ADVANCE BALANCE
+// (a running credit). When a new bill is created, existing advance is auto-applied to
+// the open bills oldest-first.
 //
 // Rules (match product spec):
 //  - Bill ₹120, paid ₹150 -> bill Fully Paid, ₹30 saved as advance.
 //  - ₹50 advance + new ₹120 bill -> ₹50 used, ₹70 remaining.
 //  - Advance ₹200 + ₹120 bill -> ₹120 used, ₹80 advance kept.
+//  - Three ₹240 bills (10/13/15 Aug) with ₹650 received total -> 10 & 13 Aug PAID,
+//    15 Aug (newest) keeps the ₹70 pending.
 //
 // The engine also rebuilds `payment.appliedTo` (kept for existing features) and an
 // Advance History (amount added / used, date, related bill or payment).
@@ -71,7 +77,7 @@ export const computeCustomerLedger = (
     return String(a.created).localeCompare(String(b.created));
   });
 
-  const openBills: OpenBill[] = []; // insertion order == chronological == FIFO
+  const openBills: OpenBill[] = []; // insertion order == chronological == FIFO (oldest first)
   const received: Record<string, number> = {};
   const appliedTo: Record<string, { saleId: string; amount: number }[]> = {};
   const history: AdvanceEntry[] = [];
@@ -79,7 +85,25 @@ export const computeCustomerLedger = (
   let hid = 0;
   const nextId = () => `adv_${hid++}`;
 
-  // Apply available advance across open bills, oldest-first.
+  // Allocate `amount` of fresh incoming money to open bills oldest-first.
+  // Returns the leftover that no bill could absorb, plus the per-bill allocation.
+  const allocate = (amount: number): { leftover: number; allocations: { saleId: string; amount: number }[] } => {
+    let remaining = round2(Math.max(0, amount));
+    const allocations: { saleId: string; amount: number }[] = [];
+    for (const bill of openBills) {
+      if (remaining <= EPS) break;
+      const owed = round2(bill.total - bill.received);
+      if (owed <= EPS) continue;
+      const take = Math.min(owed, remaining);
+      bill.received = round2(bill.received + take);
+      received[bill.saleId] = bill.received;
+      remaining = round2(remaining - take);
+      allocations.push({ saleId: bill.saleId, amount: round2(take) });
+    }
+    return { leftover: round2(remaining), allocations };
+  };
+
+  // Consume the carried ADVANCE credit across open bills oldest-first (logs "used").
   const applyAdvance = (date: string) => {
     if (advance <= EPS) return;
     for (const bill of openBills) {
@@ -90,13 +114,7 @@ export const computeCustomerLedger = (
       bill.received = round2(bill.received + take);
       advance = round2(advance - take);
       received[bill.saleId] = bill.received;
-      history.push({
-        id: nextId(),
-        type: "used",
-        amount: round2(take),
-        date,
-        saleId: bill.saleId,
-      });
+      history.push({ id: nextId(), type: "used", amount: round2(take), date, saleId: bill.saleId });
     }
   };
 
@@ -107,46 +125,25 @@ export const computeCustomerLedger = (
       openBills.push(bill);
       received[s.id] = 0;
 
-      // 1) the bill's own money pays itself first (preserves existing behaviour)
-      const own = Math.max(0, s.initialReceived ?? 0);
-      const pay = Math.min(own, bill.total);
-      bill.received = round2(pay);
-      received[s.id] = bill.received;
-
-      // 2) overpayment on this bill becomes advance
-      const over = round2(own - pay);
-      if (over > EPS) {
-        advance = round2(advance + over);
-        history.push({ id: nextId(), type: "added", amount: over, date: s.date, saleId: s.id });
-      }
-
-      // 3) auto-apply any advance (pre-existing + fresh overpay) to open bills FIFO
+      // 1) spend any pre-existing advance credit first, oldest bill first
       applyAdvance(s.date);
+
+      // 2) the amount received on this bill is normal money -> FIFO oldest-first
+      const own = Math.max(0, s.initialReceived ?? 0);
+      const { leftover } = allocate(own);
+
+      // 3) whatever remains becomes advance credit
+      if (leftover > EPS) {
+        advance = round2(advance + leftover);
+        history.push({ id: nextId(), type: "added", amount: leftover, date: s.date, saleId: s.id });
+      }
     } else {
       const p = ev.payment;
-      let remaining = round2(Math.max(0, p.amount));
-      const alloc: { saleId: string; amount: number }[] = [];
-      for (const bill of openBills) {
-        if (remaining <= EPS) break;
-        const owed = round2(bill.total - bill.received);
-        if (owed <= EPS) continue;
-        const take = Math.min(owed, remaining);
-        bill.received = round2(bill.received + take);
-        received[bill.saleId] = bill.received;
-        remaining = round2(remaining - take);
-        alloc.push({ saleId: bill.saleId, amount: round2(take) });
-      }
-      appliedTo[p.id] = alloc;
-      // leftover payment becomes advance
-      if (remaining > EPS) {
-        advance = round2(advance + remaining);
-        history.push({
-          id: nextId(),
-          type: "added",
-          amount: remaining,
-          date: p.date,
-          paymentId: p.id,
-        });
+      const { leftover, allocations } = allocate(Math.max(0, p.amount));
+      appliedTo[p.id] = allocations;
+      if (leftover > EPS) {
+        advance = round2(advance + leftover);
+        history.push({ id: nextId(), type: "added", amount: leftover, date: p.date, paymentId: p.id });
       }
     }
   }
