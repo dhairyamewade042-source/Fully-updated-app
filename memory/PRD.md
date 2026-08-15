@@ -66,3 +66,9 @@ Redesigned ONLY `buildLedgerHtml()` in `app/customer/[id].tsx` (export mechanism
 - Customer Details (Name, Phone, Statement Date, Statement Period) + Account Summary (Opening, Total Debit, Total Credit, Closing Dr./Cr.).
 - ONE chronological khata ledger table: Date · Particulars · Quantity · Debit · Credit · Dr./Cr. · Balance. Each sale → Debit row (+ its initialReceived as a Credit row); each payment → Credit row. Running Balance = prev + Debit − Credit; advance shows Cr. Dark-green header (repeats per print page via thead), zebra rows, tabular ₹, auto totals row. Footer with generated timestamp + "Thank you for your business!". No app controls / no Balance-Due box. All values derived from real data (no hard-coding).
 - Verified: visual A4 render (premium) + runtime/regression smoke via testing agent (iteration_7.json, 100%, 0 errors).
+
+## Bug fix (2026-08-15) — Statement PDF was printing the app page (web)
+- Symptom (user, mobile Chrome): "Download Statement (PDF)" printed the customer PROFILE SCREEN, not the redesigned GARLIC HUB statement — the custom HTML never appeared.
+- Root cause: expo-print web `printAsync({html})` printed the surrounding app document instead of the provided HTML.
+- Fix (`src/lib/pdf.ts`): on web, render the statement in an ISOLATED document — `window.open('','_blank')` + `document.write(html)` with an embedded auto-print `<script>`; hidden-iframe fallback (id `__stmt_print_frame__`) if pop-ups are blocked. Native path (printToFileAsync + Sharing) unchanged.
+- Verified (iteration_8.json, 100%): isolated tab contains full GARLIC HUB ledger with correct derived totals (₹200/₹50/₹150 Dr); app stays functional, 0 console errors.
