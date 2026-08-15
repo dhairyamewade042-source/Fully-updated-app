@@ -3,11 +3,11 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import dayjs from "dayjs";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { DateField } from "@/src/components/DateField";
+import { DateField, DateFieldHandle } from "@/src/components/DateField";
 import { Badge, Body, Card, H1, H2, Label } from "@/src/components/ui";
 import { useApp } from "@/src/context/AppContext";
 import { fmtDateShort, isToday, isTomorrow, kg, money } from "@/src/lib/format";
@@ -73,6 +73,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
 
   const [selectedDate, setSelectedDate] = useState<string>(dayjs().format("YYYY-MM-DD"));
+  const dateRef = useRef<DateFieldHandle>(null);
   const isSelectedToday = selectedDate === dayjs().format("YYYY-MM-DD");
   const isSelectedYesterday = selectedDate === dayjs().subtract(1, "day").format("YYYY-MM-DD");
 
@@ -179,6 +180,7 @@ export default function DashboardScreen() {
         {/* Selectable date pill */}
         <View style={{ marginTop: spacing.sm }}>
           <DateField
+            ref={dateRef}
             label=""
             value={selectedDate}
             onChange={setSelectedDate}
@@ -203,7 +205,12 @@ export default function DashboardScreen() {
           </Pressable>
         ) : null}
 
-        {/* Hero — selected date summary */}
+        {/* Hero — selected date summary (tap to change date) */}
+        <Pressable
+          testID="dashboard-hero-press"
+          onPress={() => dateRef.current?.open()}
+          style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}
+        >
         <Card
           style={{
             backgroundColor: theme.brandPrimary,
@@ -211,17 +218,42 @@ export default function DashboardScreen() {
           }}
           testID="dashboard-hero"
         >
-          <Text
+          <View
             style={{
-              color: "rgba(255,255,255,0.8)",
-              fontSize: fontSize.sm,
-              fontWeight: "700",
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
             }}
           >
-            {salesLabel}
-          </Text>
+            <Text
+              style={{
+                color: "rgba(255,255,255,0.8)",
+                fontSize: fontSize.sm,
+                fontWeight: "700",
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                flex: 1,
+              }}
+            >
+              {salesLabel}
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                backgroundColor: "rgba(255,255,255,0.18)",
+                paddingHorizontal: spacing.sm,
+                paddingVertical: 4,
+                borderRadius: radius.pill,
+              }}
+            >
+              <Ionicons name="calendar-outline" size={13} color="#FFF" />
+              <Text style={{ color: "#FFF", fontSize: fontSize.xs, fontWeight: "700" }}>
+                Change date
+              </Text>
+            </View>
+          </View>
           <Text
             testID="dashboard-today-sales"
             style={{
@@ -281,6 +313,7 @@ export default function DashboardScreen() {
             </View>
           </View>
         </Card>
+        </Pressable>
 
         {/* Pending strip (all-time) */}
         <Pressable

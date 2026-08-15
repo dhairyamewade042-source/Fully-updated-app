@@ -4,7 +4,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import dayjs from "dayjs";
-import React, { useState } from "react";
+import React, { forwardRef, useImperativeHandle, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { useApp } from "@/src/context/AppContext";
@@ -12,19 +12,18 @@ import { fmtDate } from "@/src/lib/format";
 import { fontSize, radius, spacing } from "@/src/lib/theme";
 import { Button } from "@/src/components/ui";
 
-export const DateField = ({
-  label,
-  value,
-  onChange,
-  testID,
-  allowPast = true,
-}: {
-  label: string;
-  value: string; // YYYY-MM-DD
-  onChange: (v: string) => void;
-  testID?: string;
-  allowPast?: boolean;
-}) => {
+export type DateFieldHandle = { open: () => void };
+
+export const DateField = forwardRef<
+  DateFieldHandle,
+  {
+    label: string;
+    value: string; // YYYY-MM-DD
+    onChange: (v: string) => void;
+    testID?: string;
+    allowPast?: boolean;
+  }
+>(function DateField({ label, value, onChange, testID, allowPast = true }, ref) {
   const { theme } = useApp();
   const [open, setOpen] = useState(false);
 
@@ -33,6 +32,14 @@ export const DateField = ({
 
   // Build days for the current month view.
   const [viewMonth, setViewMonth] = useState<dayjs.Dayjs>(current);
+
+  useImperativeHandle(ref, () => ({
+    open: () => {
+      setViewMonth(dayjs(value));
+      setOpen(true);
+    },
+  }), [value]);
+
   const startOfMonth = viewMonth.startOf("month");
   const daysInMonth = viewMonth.daysInMonth();
   const firstWeekday = startOfMonth.day(); // 0=Sun
@@ -219,7 +226,7 @@ export const DateField = ({
       </Modal>
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   backdrop: {
