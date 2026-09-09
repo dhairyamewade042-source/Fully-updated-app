@@ -23,6 +23,7 @@ import { Body, Button, Card, Label } from "@/src/components/ui";
 import { useApp } from "@/src/context/AppContext";
 import { fontSize, radius, spacing } from "@/src/lib/theme";
 import { money } from "@/src/lib/format";
+import { toHindiName } from "@/src/lib/translit";
 
 export default function NewSaleScreen() {
   const { theme, data, addSale } = useApp();
@@ -38,6 +39,7 @@ export default function NewSaleScreen() {
 
   const [dateISO, setDateISO] = useState<string>(dayjs().format("YYYY-MM-DD"));
   const [customerName, setCustomerName] = useState("");
+  const [hindiName, setHindiName] = useState("");
   const [phone, setPhone] = useState("");
   const [quantity, setQuantity] = useState("");
   const [price, setPrice] = useState("");
@@ -47,11 +49,18 @@ export default function NewSaleScreen() {
 
   // Prefill from Convert-to-Sale flow
   useEffect(() => {
-    if (params.customerName) setCustomerName(String(params.customerName));
+    if (params.customerName) {
+      const nm = String(params.customerName);
+      setCustomerName(nm);
+      const match = data.customers.find(
+        (c) => c.name.trim().toLowerCase() === nm.trim().toLowerCase(),
+      );
+      if (match) setHindiName(match.hindiName || toHindiName(match.name));
+    }
     if (params.phone) setPhone(String(params.phone));
     if (params.quantityKg) setQuantity(String(params.quantityKg));
     if (params.pricePerKg) setPrice(String(params.pricePerKg));
-  }, [params.customerName, params.phone, params.quantityKg, params.pricePerKg]);
+  }, [params.customerName, params.phone, params.quantityKg, params.pricePerKg, data.customers]);
 
   const q = parseFloat(quantity) || 0;
   const p = parseFloat(price) || 0;
@@ -75,14 +84,21 @@ export default function NewSaleScreen() {
   const currency = data.settings.currency;
 
   const suggestions = useMemo(() => {
-    if (!customerName.trim() || !suggestOpen) return [];
-    const q2 = customerName.trim().toLowerCase();
+    if (!suggestOpen) return [];
+    const en = customerName.trim().toLowerCase();
+    const hi = hindiName.trim();
+    if (!en && !hi) return [];
     return data.customers
-      .filter((c) => c.name.toLowerCase().includes(q2))
-      .slice(0, 5);
-  }, [customerName, data.customers, suggestOpen]);
+      .filter((c) => {
+        const matchEn = en ? c.name.toLowerCase().includes(en) : false;
+        const matchHi = hi ? (c.hindiName || "").includes(hi) : false;
+        return matchEn || matchHi;
+      })
+      .slice(0, 6);
+  }, [customerName, hindiName, data.customers, suggestOpen]);
 
-  const canSave = customerName.trim().length > 0 && q > 0 && p > 0;
+  const canSave =
+    customerName.trim().length > 0 && hindiName.trim().length > 0 && q > 0 && p > 0;
 
   const onSave = async () => {
     if (!canSave || saving) return;
@@ -90,6 +106,7 @@ export default function NewSaleScreen() {
     try {
       await addSale({
         customerName: customerName.trim(),
+        hindiName: hindiName.trim(),
         phone: phone.trim() || undefined,
         date: dayjs(dateISO).toISOString(),
         quantityKg: q,
@@ -105,6 +122,7 @@ export default function NewSaleScreen() {
       showToast(msg, "success");
       // reset form
       setCustomerName("");
+      setHindiName("");
       setPhone("");
       setQuantity("");
       setPrice("");
@@ -141,7 +159,7 @@ export default function NewSaleScreen() {
           />
 
           <Field
-            label="Customer Name"
+            label="Customer Name (English)"
             testID="sale-customer"
             value={customerName}
             onChangeText={(v) => {
@@ -160,6 +178,7 @@ export default function NewSaleScreen() {
                   testID={`sale-suggest-${c.id}`}
                   onPress={() => {
                     setCustomerName(c.name);
+                    setHindiName(c.hindiName || toHindiName(c.name));
                     if (c.phone) setPhone(c.phone);
                     setSuggestOpen(false);
                   }}
@@ -172,20 +191,34 @@ export default function NewSaleScreen() {
                   ]}
                 >
                   <Ionicons name="person-outline" size={16} color={theme.onBrandTertiary} />
-                  <Text
-                    style={{
-                      color: theme.onBrandTertiary,
-                      marginLeft: spacing.sm,
-                      fontWeight: "700",
-                    }}
-                  >
-                    {c.name}
-                    {c.phone ? ` · ${c.phone}` : ""}
-                  </Text>
+                  <View style={{ marginLeft: spacing.sm, flex: 1 }}>
+                    <Text style={{ color: theme.onBrandTertiary, fontWeight: "700" }}>
+                      {c.name}
+                      {c.hindiName ? `  ·  ${c.hindiName}` : ""}
+                    </Text>
+                    {c.phone ? (
+                      <Text style={{ color: theme.onBrandTertiary, fontSize: fontSize.sm, opacity: 0.8 }}>
+                        {c.phone}
+                      </Text>
+                    ) : null}
+                  </View>
                 </Pressable>
               ))}
             </View>
           ) : null}
+
+          <Field
+            label="Customer Name (Hindi / हिंदी)"
+            testID="sale-customer-hindi"
+            value={hindiName}
+            onChangeText={(v) => {
+              setHindiName(v);
+              setSuggestOpen(true);
+            }}
+            placeholder="जैसे रमेश"
+            autoCapitalize="none"
+            hint="Required. Type a few letters above to pick a saved customer and auto-fill both names."
+          />
 
           <Field
             label="Mobile Number (Optional)"

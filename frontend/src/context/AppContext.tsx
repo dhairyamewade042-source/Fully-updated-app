@@ -32,6 +32,7 @@ import { toHindiName } from "@/src/lib/translit";
 
 interface AddSaleInput {
   customerName: string;
+  hindiName?: string; // Devanagari name typed by the user (saved on new customers)
   phone?: string;
   date: string;
   quantityKg: number;
@@ -77,7 +78,7 @@ interface Ctx {
   updatePayment: (id: string, patch: { amount?: number; date?: string }) => Promise<void>;
   deletePayment: (id: string) => Promise<void>;
   // Customer
-  upsertCustomerByName: (name: string, phone?: string) => Customer;
+  upsertCustomerByName: (name: string, phone?: string, hindiName?: string) => Customer;
   updateCustomer: (id: string, patch: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
   // Orders
@@ -133,14 +134,23 @@ const upsertCustomerByNameSync = (
   prev: AppData,
   name: string,
   phone?: string,
+  hindiName?: string,
 ): { data: AppData; customer: Customer } => {
   const cleaned = name.trim();
+  const cleanedHindi = hindiName?.trim();
   const existing = prev.customers.find(
     (c) => c.name.trim().toLowerCase() === cleaned.toLowerCase(),
   );
   if (existing) {
-    if (phone && !existing.phone) {
-      const patched: Customer = { ...existing, phone };
+    // Backfill phone and/or a Hindi name if newly provided and previously missing.
+    const needsPhone = !!phone && !existing.phone;
+    const needsHindi = !!cleanedHindi && !existing.hindiName;
+    if (needsPhone || needsHindi) {
+      const patched: Customer = {
+        ...existing,
+        phone: needsPhone ? phone : existing.phone,
+        hindiName: needsHindi ? cleanedHindi : existing.hindiName,
+      };
       const nextCustomers = prev.customers.map((c) => (c.id === existing.id ? patched : c));
       return { data: { ...prev, customers: nextCustomers }, customer: patched };
     }
@@ -149,7 +159,7 @@ const upsertCustomerByNameSync = (
   const created: Customer = {
     id: uid(),
     name: cleaned,
-    hindiName: toHindiName(cleaned),
+    hindiName: cleanedHindi || toHindiName(cleaned),
     phone: phone?.trim() || undefined,
     createdAt: new Date().toISOString(),
   };
@@ -266,10 +276,10 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   // -------- customer mutations --------
   const upsertCustomerByName = useCallback(
-    (name: string, phone?: string) => {
+    (name: string, phone?: string, hindiName?: string) => {
       let out: Customer = {} as Customer;
       commit((prev) => {
-        const { data: nextData, customer } = upsertCustomerByNameSync(prev, name, phone);
+        const { data: nextData, customer } = upsertCustomerByNameSync(prev, name, phone, hindiName);
         out = customer;
         return nextData;
       });
@@ -309,13 +319,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   // -------- sale mutations --------
   const addSale = useCallback<Ctx["addSale"]>(
-    async ({ customerName, phone, date, quantityKg, pricePerKg, received }) => {
+    async ({ customerName, hindiName, phone, date, quantityKg, pricePerKg, received }) => {
       const total = round2(quantityKg * pricePerKg);
       const receivedInput = round2(Math.max(0, received));
       const now = new Date().toISOString();
       let sale: Sale = {} as Sale;
       await commit((prev) => {
-        const { data: withCustomer, customer } = upsertCustomerByNameSync(prev, customerName, phone);
+        const { data: withCustomer, customer } = upsertCustomerByNameSync(prev, customerName, phone, hindiName);
         sale = {
           id: uid(),
           customerId: customer.id,
