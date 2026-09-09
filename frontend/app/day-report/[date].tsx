@@ -5,9 +5,9 @@
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DateField } from "@/src/components/DateField";
@@ -23,17 +23,6 @@ import { Sale } from "@/src/lib/types";
 const ymd = (s: string) => dayjs(s).format("YYYY-MM-DD");
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-type Status = "Paid" | "Partial" | "Unpaid";
-const statusFrom = (total: number, received: number): Status => {
-  const pending = total - received;
-  if (pending <= 0.0001) return "Paid";
-  if (received <= 0.0001) return "Unpaid";
-  return "Partial";
-};
-const statusOf = (s: Sale): Status => statusFrom(s.total, s.received);
-const toneOf = (st: Status): "success" | "warning" | "error" =>
-  st === "Paid" ? "success" : st === "Partial" ? "warning" : "error";
-
 const BIZ = {
   name: "GARLIC HUB",
   phone: "+91 7509730965",
@@ -42,6 +31,7 @@ const BIZ = {
 
 export default function DayReportScreen() {
   const params = useLocalSearchParams<{ date?: string }>();
+  const router = useRouter();
   const { theme, data } = useApp();
   const insets = useSafeAreaInsets();
   const currency = data.settings.currency;
@@ -54,24 +44,113 @@ export default function DayReportScreen() {
   const report = useMemo(() => {
     const sales = data.sales
       .filter((s) => ymd(s.date) === date)
-      .sort((a, b) => a.customerName.localeCompare(b.customerName));
 
     // Aggregate customer-wise (one row per customer) for the report.
     const byCust = new Map<
       string,
-      { id: string; name: string; qty: number; total: number; received: number; pending: number }
+      { id: string; name: string; qty: number; total: number; received: number; pending: number; advance: number }
     >();
     sales.forEach((s) => {
       const g =
         byCust.get(s.customerId) ||
-        { id: s.customerId, name: s.customerName, qty: 0, total: 0, received: 0, pending: 0 };
+        { id: s.customerId, name: s.customerName, qty: 0, total: 0, received: 0, pending: 0, advance: 0 };
       g.qty = round2(g.qty + s.quantityKg);
       g.total = round2(g.total + s.total);
       g.received = round2(g.received + s.received);
       g.pending = round2(g.pending + Math.max(0, s.total - s.received));
       byCust.set(s.customerId, g);
     });
-    const customerRows = Array.from(byCust.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+    /*
+     * Running customer advance as of the selected date.
+     *
+     * Advance = all money received up to this date
+     *           minus all bills up to this date.
+     *
+     * A sale's initialReceived is money received on that bill.
+     * Separate Payment records are later payments/advances.
+     *
+     * This gives:
+     * Previous pending 20 + today's bill 120, payment 150 = advance 10.
+     * Next day: previous advance 10 + payment 150 - bill 120 = advance 40.
+     */
+    byCust.forEach((g) => {
+      const customerSales = data.sales.filter(
+        (s) =>
+          s.customerId === g.id &&
+          ymd(s.date) <= date
+      );
+
+      const customerPayments = data.payments.filter(
+        (p) =>
+          p.customerId === g.id &&
+          ymd(p.date) <= date
+      );
+
+      const totalBills = customerSales.reduce(
+        (sum, s) => sum + Number(s.total || 0),
+        0
+      );
+
+      const billPayments = customerSales.reduce(
+        (sum, s) => sum + Number(s.initialReceived || 0),
+        0
+      );
+
+      const laterPayments = customerPayments.reduce(
+        (sum, p) => sum + Number(p.amount || 0),
+        0
+      );
+
+      g.advance = round2(
+        Math.max(0, billPayments + laterPayments - totalBills)
+      );
+    });
+
+    // Advance balance at the END of this report day.
+    // This includes advance carried from previous days.
+    // Formula:
+    // total payments received up to this day
+    // minus total bills up to this day, never below zero.
+    const customerRows = Array.from(byCust.values()).map((row) => {
+      const historicalSales = data.sales
+        .filter(
+          (x) =>
+            x.customerId === row.id &&
+            ymd(x.date) <= date,
+        )
+        .reduce((sum, x) => sum + x.total, 0);
+
+      const historicalInitialReceived = data.sales
+        .filter(
+          (x) =>
+            x.customerId === row.id &&
+            ymd(x.date) <= date,
+        )
+        .reduce((sum, x) => sum + (x.initialReceived || 0), 0);
+
+      const historicalPayments = data.payments
+        .filter(
+          (p) =>
+            p.customerId === row.id &&
+            ymd(p.date) <= date,
+        )
+        .reduce((sum, p) => sum + p.amount, 0);
+
+      const advance = round2(
+        Math.max(
+          0,
+          historicalInitialReceived +
+            historicalPayments -
+            historicalSales,
+        ),
+      );
+
+      return {
+        ...row,
+        advance,
+      };
+    });
 
     const totalSales = round2(sales.reduce((a, s) => a + s.total, 0));
     const totalQty = round2(sales.reduce((a, s) => a + s.quantityKg, 0));
@@ -103,18 +182,11 @@ export default function DayReportScreen() {
         <path d="M40 20 C43 33 43 47 38 57" stroke="#1B5E20" stroke-width="1.4" fill="none"/>
       </svg>`;
 
-    const badge = (st: Status) => {
-      const color = st === "Paid" ? "#1B5E20" : st === "Partial" ? "#8A5A00" : "#B3261E";
-      const bg = st === "Paid" ? "#E8F5E9" : st === "Partial" ? "#FFF3CD" : "#FDECEA";
-      return `<span class="badge" style="color:${color};background:${bg}">${st}</span>`;
-    };
-
     const rows =
       report.customerRows.length === 0
         ? `<tr><td colspan="7" class="empty">No customer transactions on this day.</td></tr>`
         : report.customerRows
             .map((r, i) => {
-              const st = statusFrom(r.total, r.received);
               const displayName = lang === "hi" ? toHindiName(r.name) : r.name;
               return `<tr>
                 <td class="c-idx">${i + 1}</td>
@@ -123,7 +195,7 @@ export default function DayReportScreen() {
                 <td class="num">${money(r.total, currency)}</td>
                 <td class="num c-recv">${money(r.received, currency)}</td>
                 <td class="num c-pend">${money(r.pending, currency)}</td>
-                <td class="c-status">${badge(st)}</td>
+                <td class="num c-status">${money(r.advance, currency)}</td>
               </tr>`;
             })
             .join("");
@@ -179,7 +251,6 @@ export default function DayReportScreen() {
         .c-name { font-weight: 700; }
         .c-recv { color: #1B5E20; font-weight: 700; }
         .c-pend { color: #B3261E; font-weight: 700; }
-        .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 11px; }
         .empty { text-align: center; color: #5C6B5F; font-style: italic; padding: 18px 10px !important; }
         tr { page-break-inside: avoid; }
         tr.totals td {
@@ -224,7 +295,7 @@ export default function DayReportScreen() {
                 <th class="num">Total</th>
                 <th class="num">Received</th>
                 <th class="num">Pending</th>
-                <th class="c-status">Status</th>
+                <th class="c-status">Advance Payment</th>
               </tr>
             </thead>
             <tbody>
@@ -315,9 +386,17 @@ export default function DayReportScreen() {
           </Card>
         ) : (
           report.customerRows.map((r) => {
-            const st = statusFrom(r.total, r.received);
             return (
-              <Card key={r.id} style={{ marginBottom: spacing.sm }} testID={`day-report-customer-${r.id}`}>
+              <Pressable
+                key={r.id}
+                onPress={() => router.push(`/customer/${r.id}`)}
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.85 : 1,
+                  marginBottom: spacing.sm,
+                })}
+                testID={`day-report-customer-${r.id}`}
+              >
+                <Card>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: theme.onSurface, fontSize: fontSize.lg, fontWeight: "700" }}>
@@ -327,7 +406,7 @@ export default function DayReportScreen() {
                       {kg(r.qty)}
                     </Text>
                   </View>
-                  <Badge label={st} tone={toneOf(st)} />
+                  
                 </View>
                 <View style={styles.billRow}>
                   <View style={{ flex: 1 }}>
@@ -347,7 +426,8 @@ export default function DayReportScreen() {
                     </Text>
                   </View>
                 </View>
-              </Card>
+                </Card>
+              </Pressable>
             );
           })
         )}

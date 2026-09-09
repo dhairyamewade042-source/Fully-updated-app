@@ -496,85 +496,374 @@ export default function CustomerDetailScreen() {
     return `<!DOCTYPE html><html><head><meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <style>
-        @page { size: 100mm 170mm; margin: 6mm 5mm 7mm 5mm; }
-        * { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; }
-        body {
-          font-family: "Helvetica Neue", Helvetica, Arial, "Segoe UI", Roboto, sans-serif;
-          color: #1E2B22; font-size: 10px; line-height: 1.4;
-          -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        * {
+          box-sizing: border-box;
         }
-        .sheet { width: 100%; margin: 0 auto; }
 
-        /* Letterhead */
-        .letterhead { text-align: center; padding-bottom: 8px; border-bottom: 2px solid #1B5E20; }
-        .badge-logo {
-          width: 42px; height: 42px; border-radius: 50%; background: #1B5E20;
-          display: inline-flex; align-items: center; justify-content: center; margin-bottom: 4px;
+        /* Professional A4 bank-statement page */
+        @page {
+          size: A4 portrait;
+          margin: 9mm 8mm 9mm 8mm;
         }
-        .biz-name { font-size: 19px; font-weight: 800; color: #1B5E20; letter-spacing: 1.5px; }
-        .biz-tag { font-size: 10px; color: #4B5A4F; letter-spacing: .3px; margin-top: 1px; }
-        .biz-contact { font-size: 9px; color: #4B5A4F; margin-top: 4px; line-height: 1.5; }
-        .biz-contact span { display: block; }
+
+        html,
+        body {
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          background: #ffffff;
+        }
+
+        body {
+          font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+          color: #1E2B22;
+          font-size: 11px;
+          line-height: 1.35;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+
+        .sheet {
+          width: 100%;
+          max-width: none;
+          margin: 0;
+        }
+
+        /* =========================================================
+           PROFESSIONAL LETTERHEAD
+           ========================================================= */
+
+        .letterhead {
+          position: relative;
+          text-align: center;
+          padding: 0 0 8px;
+          border-bottom: 2px solid #1B5E20;
+        }
+
+        .badge-logo {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          background: #1B5E20;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 3px;
+        }
+
+        .biz-name {
+          font-size: 21px;
+          font-weight: 800;
+          color: #1B5E20;
+          letter-spacing: 1.4px;
+        }
+
+        .biz-tag {
+          font-size: 10px;
+          color: #59665D;
+          letter-spacing: .25px;
+          margin-top: 1px;
+        }
+
+        .biz-contact {
+          font-size: 9px;
+          color: #59665D;
+          margin-top: 3px;
+          line-height: 1.35;
+        }
+
+        .biz-contact span {
+          display: block;
+        }
+
+        /* =========================================================
+           DOCUMENT TITLE
+           ========================================================= */
 
         .doc-title {
-          text-align: center; font-size: 10px; font-weight: 700; letter-spacing: 2px;
-          text-transform: uppercase; color: #1B5E20; background: #EAF3EC;
-          padding: 4px 0; margin: 10px 0 10px; border-radius: 4px;
+          text-align: center;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 1.8px;
+          text-transform: uppercase;
+          color: #1B5E20;
+          background: #EEF5EF;
+          border: 1px solid #D5E3D7;
+          padding: 6px 0;
+          margin: 9px 0 9px;
+          border-radius: 2px;
         }
 
-        /* Customer + summary blocks (stacked for mobile) */
-        .cols { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-        .block { border: 1px solid #D6E2D9; border-radius: 6px; overflow: hidden; }
+        /* =========================================================
+           CUSTOMER + SUMMARY
+           ========================================================= */
+
+        .cols {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+          margin-bottom: 9px;
+        }
+
+        .block {
+          border: 1px solid #CBD8CE;
+          border-radius: 3px;
+          overflow: hidden;
+          page-break-inside: avoid;
+        }
+
         .block .bhead {
-          background: #1B5E20; color: #fff; font-size: 9px; font-weight: 700;
-          letter-spacing: .8px; text-transform: uppercase; padding: 5px 8px;
+          background: #1B5E20;
+          color: #FFFFFF;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: .7px;
+          text-transform: uppercase;
+          padding: 5px 8px;
         }
-        .block .bbody { padding: 6px 8px; background: #fff; }
-        .kv { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
-        .kv .k { color: #5C6B5F; }
-        .kv .v { font-weight: 700; color: #1E2B22; text-align: right; }
-        .kv .v.dr { color: #B3261E; }
-        .kv .v.cr { color: #1B5E20; }
-        .summary .bbody { background: #F5F8F5; }
 
-        /* Ledger table */
-        table.ledger { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .block .bbody {
+          padding: 5px 8px;
+          background: #FFFFFF;
+        }
+
+        .kv {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          padding: 2px 0;
+          font-size: 10px;
+          min-height: 17px;
+        }
+
+        .kv .k {
+          color: #657168;
+        }
+
+        .kv .v {
+          font-weight: 700;
+          color: #1E2B22;
+          text-align: right;
+        }
+
+        .kv .v.dr {
+          color: #B3261E;
+        }
+
+        .kv .v.cr {
+          color: #1B5E20;
+        }
+
+        .summary .bbody {
+          background: #F7F9F7;
+        }
+
+        /* =========================================================
+           LEDGER TABLE
+           KEEPING YOUR EXISTING 6 COLUMNS
+           
+           1 Date
+           2 Type/Qty
+           3 Debit
+           4 Credit
+           5 Dr/Cr
+           6 Balance
+           ========================================================= */
+
+        table.ledger {
+          width: 100%;
+          border-collapse: collapse;
+          border-spacing: 0;
+          table-layout: fixed;
+          margin-top: 4px;
+          page-break-before: auto;
+        }
+
+        table.ledger thead {
+          display: table-header-group;
+        }
+
         table.ledger thead th {
-          background: #1B5E20; color: #fff; font-size: 8.5px; font-weight: 700;
-          text-transform: uppercase; letter-spacing: .2px; padding: 5px 4px;
-          border: 1px solid #145018; text-align: left;
-        }
-        table.ledger tbody td {
-          padding: 5px 4px; border: 1px solid #D6E2D9; font-size: 9px; vertical-align: top;
-          word-break: break-word;
-        }
-        table.ledger tbody tr:nth-child(even) td { background: #F5F8F5; }
-        table.ledger .num { text-align: right; font-variant-numeric: tabular-nums; }
-        table.ledger th.num { text-align: right; }
-        table.ledger .c-qty, table.ledger th.c-qty { text-align: center; }
-        table.ledger .c-drcr, table.ledger th.c-drcr { text-align: center; font-weight: 700; }
-        table.ledger tbody td.c-debit { color: #B3261E; font-weight: 800; }
-        table.ledger tbody td.c-credit { color: #1B5E20; font-weight: 800; }
-        table.ledger .muted { color: #9AA79E; }
-        table.ledger .cc-dr { color: #B3261E; }
-        table.ledger .cc-cr { color: #1B5E20; }
-        table.ledger .c-bal { font-weight: 800; }
-        table.ledger td.bal-dr { color: #B3261E; }
-        table.ledger td.bal-cr { color: #1B5E20; }
-        table.ledger tr { page-break-inside: avoid; }
-        .empty { text-align: center; color: #5C6B5F; font-style: italic; padding: 12px 6px !important; }
-        table.ledger tr.totals td {
-          background: #EAF3EC; font-weight: 800; border-top: 2px solid #1B5E20; font-size: 9.5px;
+          background: #1B5E20;
+          color: #FFFFFF;
+          font-size: 8.8px;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: .25px;
+          padding: 6px 5px;
+          border: 1px solid #145018;
+          text-align: left;
+          vertical-align: middle;
+          white-space: nowrap;
         }
 
-        /* Footer */
-        .foot {
-          margin-top: 14px; padding-top: 8px; border-top: 1.5px solid #1B5E20;
-          text-align: center; color: #4B5A4F; font-size: 8.5px; line-height: 1.5;
+        /* Same 6-column ledger structure, better proportions for A4 */
+
+        table.ledger th:nth-child(1),
+        table.ledger td:nth-child(1) {
+          width: 14%;
         }
-        .foot .biz { font-weight: 700; color: #1B5E20; letter-spacing: .3px; }
-        .foot .thanks { margin-top: 4px; font-weight: 700; color: #1B5E20; }
+
+        table.ledger th:nth-child(2),
+        table.ledger td:nth-child(2) {
+          width: 12%;
+          text-align: center;
+        }
+
+        table.ledger th:nth-child(3),
+        table.ledger td:nth-child(3) {
+          width: 17%;
+        }
+
+        table.ledger th:nth-child(4),
+        table.ledger td:nth-child(4) {
+          width: 17%;
+        }
+
+        table.ledger th:nth-child(5),
+        table.ledger td:nth-child(5) {
+          width: 10%;
+          text-align: center;
+        }
+
+        table.ledger th:nth-child(6),
+        table.ledger td:nth-child(6) {
+          width: 30%;
+        }
+
+        table.ledger tbody td {
+          padding: 6px 5px;
+          border: 1px solid #D1DBD3;
+          font-size: 10px;
+          line-height: 1.25;
+          vertical-align: middle;
+          word-break: normal;
+          overflow-wrap: anywhere;
+          background: #FFFFFF;
+        }
+
+        /* Very subtle alternating rows like financial statements */
+        table.ledger tbody tr:nth-child(even) td {
+          background: #F8FAF8;
+        }
+
+        /* Numeric columns */
+        table.ledger .num {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+        }
+
+        table.ledger th.num {
+          text-align: right;
+        }
+
+        table.ledger .c-qty,
+        table.ledger th.c-qty {
+          text-align: center;
+          white-space: nowrap;
+        }
+
+        table.ledger .c-drcr,
+        table.ledger th.c-drcr {
+          text-align: center;
+          white-space: nowrap;
+          font-weight: 800;
+        }
+
+        /* Debit = red */
+        table.ledger tbody td.c-debit {
+          color: #B3261E;
+          font-weight: 700;
+        }
+
+        /* Credit = green */
+        table.ledger tbody td.c-credit {
+          color: #1B5E20;
+          font-weight: 700;
+        }
+
+        table.ledger .muted {
+          color: #7B877E;
+        }
+
+        table.ledger .cc-dr {
+          color: #B3261E;
+          font-weight: 800;
+        }
+
+        table.ledger .cc-cr {
+          color: #1B5E20;
+          font-weight: 800;
+        }
+
+        /* Closing balance */
+        table.ledger .c-bal {
+          font-weight: 800;
+          white-space: nowrap;
+        }
+
+        table.ledger td.bal-dr {
+          color: #B3261E;
+        }
+
+        table.ledger td.bal-cr {
+          color: #1B5E20;
+        }
+
+        /* Keep transaction rows together */
+        table.ledger tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+
+        .empty {
+          text-align: center;
+          color: #66736A;
+          font-style: italic;
+          padding: 12px 6px !important;
+        }
+
+        /* =========================================================
+           TOTAL ROW — BANK STATEMENT STYLE
+           ========================================================= */
+
+        table.ledger tr.totals td {
+          background: #EAF3EC;
+          font-weight: 800;
+          border-top: 2px solid #1B5E20;
+          border-bottom: 1px solid #AFC5B4;
+          font-size: 10px;
+          padding: 7px 5px;
+        }
+
+        /* =========================================================
+           FOOTER
+           ========================================================= */
+
+        .foot {
+          margin-top: 11px;
+          padding-top: 7px;
+          border-top: 1px solid #1B5E20;
+          text-align: center;
+          color: #59665D;
+          font-size: 8.5px;
+          line-height: 1.4;
+          page-break-inside: avoid;
+        }
+
+        .foot .biz {
+          font-weight: 700;
+          color: #1B5E20;
+          letter-spacing: .25px;
+        }
+
+        .foot .thanks {
+          margin-top: 3px;
+          font-weight: 700;
+          color: #1B5E20;
+        }
       </style></head>
       <body>
         <div class="sheet">
@@ -597,10 +886,7 @@ export default function CustomerDetailScreen() {
                 <div class="kv"><span class="k">Statement Period</span><span class="v">${statementPeriod}</span></div>
               </div>
             </div>
-            <div class="block summary">
-              <div class="bhead">Account Summary</div>
-              <div class="bbody">
-                <div class="kv"><span class="k">Opening Balance</span><span class="v">${balCell(openingBalance)}</span></div>
+            
                 <div class="kv"><span class="k">Total Debit</span><span class="v dr">${money(totalDebit, currency)}</span></div>
                 <div class="kv"><span class="k">Total Credit</span><span class="v cr">${money(totalCredit, currency)}</span></div>
                 <div class="kv"><span class="k">Closing Balance</span><span class="v ${closingBalance > 0.0001 ? "dr" : closingBalance < -0.0001 ? "cr" : ""}">${balCell(closingBalance)}</span></div>
@@ -608,26 +894,6 @@ export default function CustomerDetailScreen() {
             </div>
           </div>
 
-          <table class="ledger">
-            <colgroup>
-              <col style="width:18%" />
-              <col style="width:13%" />
-              <col style="width:18%" />
-              <col style="width:18%" />
-              <col style="width:13%" />
-              <col style="width:20%" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th class="c-date">Date</th>
-                <th class="c-qty">Quantity</th>
-                <th class="num">Debit</th>
-                <th class="num">Credit</th>
-                <th class="c-drcr">Dr./Cr.</th>
-                <th class="num c-bal">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
               ${rowsHtml}
               ${
                 ledgerRows.length === 0

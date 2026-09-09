@@ -41,3 +41,13 @@ app-example
 
 .env
 .env.backup
+
+# Local editing backups and temporary files
+*.backup
+*.before-*
+*.broken-before-*
+*.corrupted-backup
+*.backup-corrupt
+app-backup-before-dashboard-change/
+first_editors.txt
+second_editors.txt
