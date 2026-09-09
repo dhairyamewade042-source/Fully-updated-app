@@ -6,6 +6,7 @@ export type OrderStatus = "pending" | "confirmed" | "completed" | "cancelled";
 export interface Customer {
   id: string;
   name: string;
+  hindiName?: string; // saved Devanagari name (auto-generated at creation, reused thereafter)
   phone?: string;
   createdAt: string; // ISO
 }

@@ -44,16 +44,19 @@ export default function DayReportScreen() {
   const report = useMemo(() => {
     const sales = data.sales
       .filter((s) => ymd(s.date) === date)
+      // Preserve the order customers FIRST appear in sales created that day
+      // (chronological by creation), so the report is never alphabetical.
+      .sort((a, b) => (a.createdAt || a.date).localeCompare(b.createdAt || b.date));
 
     // Aggregate customer-wise (one row per customer) for the report.
     const byCust = new Map<
       string,
-      { id: string; name: string; qty: number; total: number; received: number; pending: number; advance: number }
+      { id: string; name: string; hindiName?: string; qty: number; total: number; received: number; pending: number; advance: number }
     >();
     sales.forEach((s) => {
       const g =
         byCust.get(s.customerId) ||
-        { id: s.customerId, name: s.customerName, qty: 0, total: 0, received: 0, pending: 0, advance: 0 };
+        { id: s.customerId, name: s.customerName, hindiName: data.customers.find((c) => c.id === s.customerId)?.hindiName, qty: 0, total: 0, received: 0, pending: 0, advance: 0 };
       g.qty = round2(g.qty + s.quantityKg);
       g.total = round2(g.total + s.total);
       g.received = round2(g.received + s.received);
@@ -187,7 +190,7 @@ export default function DayReportScreen() {
         ? `<tr><td colspan="7" class="empty">No customer transactions on this day.</td></tr>`
         : report.customerRows
             .map((r, i) => {
-              const displayName = lang === "hi" ? toHindiName(r.name) : r.name;
+              const displayName = lang === "hi" ? (r.hindiName || toHindiName(r.name)) : r.name;
               return `<tr>
                 <td class="c-idx">${i + 1}</td>
                 <td class="c-name">${escapeHtml(displayName)}</td>

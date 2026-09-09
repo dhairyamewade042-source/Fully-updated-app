@@ -28,6 +28,7 @@ import {
 } from "@/src/lib/types";
 import { darkTheme, lightTheme, Theme } from "@/src/lib/theme";
 import { AdvanceEntry, computeCustomerLedger } from "@/src/lib/ledger";
+import { toHindiName } from "@/src/lib/translit";
 
 interface AddSaleInput {
   customerName: string;
@@ -148,6 +149,7 @@ const upsertCustomerByNameSync = (
   const created: Customer = {
     id: uid(),
     name: cleaned,
+    hindiName: toHindiName(cleaned),
     phone: phone?.trim() || undefined,
     createdAt: new Date().toISOString(),
   };
