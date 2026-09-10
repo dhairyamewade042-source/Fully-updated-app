@@ -332,7 +332,10 @@ export default function DayReportScreen() {
     if (exporting) return;
     setExporting(lang);
     try {
-      await exportHtmlAsPdf(buildCustomerReportHtml(lang));
+      await exportHtmlAsPdf(
+        buildCustomerReportHtml(lang),
+        `Sales Report ${fmtDate(date)}`,
+      );
     } finally {
       setExporting(null);
     }

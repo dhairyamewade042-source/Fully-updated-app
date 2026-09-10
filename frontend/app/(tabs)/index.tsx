@@ -12,6 +12,169 @@ import { Badge, Body, Card, H1, H2, Label } from "@/src/components/ui";
 import { useApp } from "@/src/context/AppContext";
 import { fmtDateShort, isToday, isTomorrow, kg, money } from "@/src/lib/format";
 import { fontSize, radius, spacing } from "@/src/lib/theme";
+import { ChartPoint, PerformanceChart } from "@/src/components/PerformanceChart";
+
+type Period = "1D" | "7D" | "1M" | "3M" | "6M" | "1Y" | "All";
+const PERIODS: Period[] = ["1D", "7D", "1M", "3M", "6M", "1Y", "All"];
+
+const bucketMap = (keys: string[]) => {
+  const m = new Map<string, { sales: number; qty: number }>();
+  keys.forEach((k) => m.set(k, { sales: 0, qty: 0 }));
+  return m;
+};
+
+// Aggregate raw sales into chart points for the selected period.
+function buildSeries(
+  sales: { id: string; date: string; createdAt?: string; total: number; quantityKg: number }[],
+  period: Period,
+): { points: ChartPoint[]; totalSales: number; totalQty: number } {
+  const now = dayjs();
+  const ymd = (s: string) => dayjs(s).format("YYYY-MM-DD");
+  let points: ChartPoint[] = [];
+
+  if (period === "1D") {
+    const day = now.format("YYYY-MM-DD");
+    points = sales
+      .filter((s) => ymd(s.date) === day)
+      .sort((a, b) =>
+        String(a.createdAt || a.date).localeCompare(String(b.createdAt || b.date)),
+      )
+      .map((s) => ({
+        key: s.id,
+        x: dayjs(s.createdAt || s.date).format("h:mm A"),
+        tip: dayjs(s.createdAt || s.date).format("D MMM, h:mm A"),
+        sales: s.total,
+        qty: s.quantityKg,
+      }));
+  } else if (period === "7D" || period === "1M") {
+    const days = period === "7D" ? 7 : 30;
+    const start = now.subtract(days - 1, "day").startOf("day");
+    const keys: string[] = [];
+    for (let i = 0; i < days; i++) keys.push(start.add(i, "day").format("YYYY-MM-DD"));
+    const m = bucketMap(keys);
+    sales.forEach((s) => {
+      const g = m.get(ymd(s.date));
+      if (g) {
+        g.sales += s.total;
+        g.qty += s.quantityKg;
+      }
+    });
+    points = keys.map((k) => ({
+      key: k,
+      x: dayjs(k).format("D MMM"),
+      tip: dayjs(k).format("ddd, D MMM YYYY"),
+      sales: m.get(k)!.sales,
+      qty: m.get(k)!.qty,
+    }));
+  } else if (period === "3M") {
+    const weeks = 13;
+    const start = now.startOf("week").subtract(weeks - 1, "week");
+    const keys: string[] = [];
+    for (let i = 0; i < weeks; i++) keys.push(start.add(i, "week").format("YYYY-MM-DD"));
+    const m = bucketMap(keys);
+    sales.forEach((s) => {
+      const wk = dayjs(s.date).startOf("week").format("YYYY-MM-DD");
+      const g = m.get(wk);
+      if (g) {
+        g.sales += s.total;
+        g.qty += s.quantityKg;
+      }
+    });
+    points = keys.map((k) => ({
+      key: k,
+      x: dayjs(k).format("D MMM"),
+      tip: "Week of " + dayjs(k).format("D MMM YYYY"),
+      sales: m.get(k)!.sales,
+      qty: m.get(k)!.qty,
+    }));
+  } else if (period === "6M" || period === "1Y") {
+    const months = period === "6M" ? 6 : 12;
+    const start = now.startOf("month").subtract(months - 1, "month");
+    const keys: string[] = [];
+    for (let i = 0; i < months; i++) keys.push(start.add(i, "month").format("YYYY-MM"));
+    const m = bucketMap(keys);
+    sales.forEach((s) => {
+      const mk = dayjs(s.date).format("YYYY-MM");
+      const g = m.get(mk);
+      if (g) {
+        g.sales += s.total;
+        g.qty += s.quantityKg;
+      }
+    });
+    points = keys.map((k) => ({
+      key: k,
+      x: dayjs(k + "-01").format("MMM"),
+      tip: dayjs(k + "-01").format("MMM YYYY"),
+      sales: m.get(k)!.sales,
+      qty: m.get(k)!.qty,
+    }));
+  } else if (sales.length > 0) {
+    // All — adaptive grouping across the full history
+    const times = sales.map((s) => dayjs(s.date));
+    const first = times.reduce((a, b) => (a.isBefore(b) ? a : b));
+    const last = times.reduce((a, b) => (a.isAfter(b) ? a : b));
+    const span = last.diff(first, "day");
+    if (span <= 31) {
+      const start = first.startOf("day");
+      const cnt = last.startOf("day").diff(start, "day") + 1;
+      const keys: string[] = [];
+      for (let i = 0; i < cnt; i++) keys.push(start.add(i, "day").format("YYYY-MM-DD"));
+      const m = bucketMap(keys);
+      sales.forEach((s) => {
+        const g = m.get(ymd(s.date));
+        if (g) {
+          g.sales += s.total;
+          g.qty += s.quantityKg;
+        }
+      });
+      points = keys.map((k) => ({
+        key: k,
+        x: dayjs(k).format("D MMM"),
+        tip: dayjs(k).format("ddd, D MMM YYYY"),
+        sales: m.get(k)!.sales,
+        qty: m.get(k)!.qty,
+      }));
+    } else if (span <= 730) {
+      const start = first.startOf("month");
+      const cnt = last.startOf("month").diff(start, "month") + 1;
+      const keys: string[] = [];
+      for (let i = 0; i < cnt; i++) keys.push(start.add(i, "month").format("YYYY-MM"));
+      const m = bucketMap(keys);
+      sales.forEach((s) => {
+        const g = m.get(dayjs(s.date).format("YYYY-MM"));
+        if (g) {
+          g.sales += s.total;
+          g.qty += s.quantityKg;
+        }
+      });
+      points = keys.map((k) => ({
+        key: k,
+        x: dayjs(k + "-01").format("MMM YY"),
+        tip: dayjs(k + "-01").format("MMM YYYY"),
+        sales: m.get(k)!.sales,
+        qty: m.get(k)!.qty,
+      }));
+    } else {
+      const start = first.startOf("year");
+      const cnt = last.year() - first.year() + 1;
+      const keys: string[] = [];
+      for (let i = 0; i < cnt; i++) keys.push(start.add(i, "year").format("YYYY"));
+      const m = bucketMap(keys);
+      sales.forEach((s) => {
+        const g = m.get(dayjs(s.date).format("YYYY"));
+        if (g) {
+          g.sales += s.total;
+          g.qty += s.quantityKg;
+        }
+      });
+      points = keys.map((k) => ({ key: k, x: k, tip: k, sales: m.get(k)!.sales, qty: m.get(k)!.qty }));
+    }
+  }
+
+  const totalSales = points.reduce((a, p) => a + p.sales, 0);
+  const totalQty = points.reduce((a, p) => a + p.qty, 0);
+  return { points, totalSales, totalQty };
+}
 
 const QuickAction = ({
   label,
@@ -79,6 +242,9 @@ export default function DashboardScreen() {
 
   const currency = data.settings.currency;
   const businessName = data.settings.businessName;
+
+  const [period, setPeriod] = useState<Period>("7D");
+  const series = useMemo(() => buildSeries(data.sales, period), [data.sales, period]);
 
   // -------- KPIs for selected date --------
   const dayStats = useMemo(() => {
@@ -315,8 +481,69 @@ export default function DashboardScreen() {
         </Card>
         </Pressable>
 
-        {/* Pending strip (all-time) */}
-        
+        {/* Sales & Quantity Performance */}
+        <Card style={{ marginTop: spacing.xl }} testID="performance-chart-card">
+          <H2 style={{ marginBottom: spacing.md }}>Performance</H2>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.sm }}
+            style={{ marginBottom: spacing.md, marginHorizontal: -spacing.xs }}
+          >
+            {PERIODS.map((p) => {
+              const activeP = p === period;
+              return (
+                <Pressable
+                  key={p}
+                  testID={`chart-period-${p}`}
+                  onPress={() => setPeriod(p)}
+                  style={{
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.sm,
+                    borderRadius: radius.pill,
+                    backgroundColor: activeP ? theme.brandPrimary : theme.surfaceSecondary,
+                    borderWidth: 1,
+                    borderColor: activeP ? theme.brandPrimary : theme.border,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: activeP ? theme.onBrandPrimary : theme.onSurface,
+                      fontWeight: "700",
+                      fontSize: fontSize.sm,
+                    }}
+                  >
+                    {p}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.xs }}>
+            <View style={{ flex: 1 }}>
+              <Label>Total Sales</Label>
+              <Text
+                testID="chart-total-sales"
+                style={{ color: theme.onSurface, fontSize: fontSize.xl, fontWeight: "800" }}
+              >
+                {money(series.totalSales, currency)}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Label>Total Quantity</Label>
+              <Text
+                testID="chart-total-qty"
+                style={{ color: theme.onSurface, fontSize: fontSize.xl, fontWeight: "800" }}
+              >
+                {kg(series.totalQty)}
+              </Text>
+            </View>
+          </View>
+
+          <PerformanceChart points={series.points} currency={currency} />
+        </Card>
 
         {/* You Owe Traders */}
         

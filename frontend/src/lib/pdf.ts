@@ -7,9 +7,25 @@
 
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
 
 import { showToast } from "@/src/components/Toast";
+
+// Ensure the document title matches the desired file name. On web this becomes
+// the default "Save as PDF" filename; on native it is harmless metadata.
+const setDocTitle = (html: string, title?: string): string => {
+  if (!title) return html;
+  const tag = `<title>${title.replace(/[<>]/g, "")}</title>`;
+  if (/<title>[\s\S]*?<\/title>/i.test(html)) {
+    return html.replace(/<title>[\s\S]*?<\/title>/i, tag);
+  }
+  if (html.includes("</head>")) return html.replace("</head>", `${tag}</head>`);
+  return html;
+};
+
+const safeFileName = (name: string): string =>
+  (name.replace(/[^\w\-. ]+/g, "").replace(/\s+/g, " ").trim() || "statement").slice(0, 80);
 
 // Inject a self-contained auto-print script just before </body> so the isolated
 // document prints itself once its content (incl. inline SVG/images) has laid out.
@@ -66,22 +82,34 @@ const printHtmlWeb = (html: string): void => {
   }, 500);
 };
 
-export const exportHtmlAsPdf = async (html: string): Promise<void> => {
+export const exportHtmlAsPdf = async (html: string, fileName?: string): Promise<void> => {
   try {
+    const doc = setDocTitle(html, fileName);
     if (Platform.OS === "web") {
-      printHtmlWeb(html);
+      printHtmlWeb(doc);
       return;
     }
-    const { uri } = await Print.printToFileAsync({ html, base64: false });
+    const { uri } = await Print.printToFileAsync({ html: doc, base64: false });
+    let shareUri = uri;
+    if (fileName) {
+      const dir = uri.substring(0, uri.lastIndexOf("/") + 1);
+      const dest = `${dir}${safeFileName(fileName)}.pdf`;
+      try {
+        await FileSystem.moveAsync({ from: uri, to: dest });
+        shareUri = dest;
+      } catch {
+        shareUri = uri;
+      }
+    }
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
-      await Sharing.shareAsync(uri, {
+      await Sharing.shareAsync(shareUri, {
         mimeType: "application/pdf",
-        dialogTitle: "Share statement",
+        dialogTitle: fileName || "Share statement",
         UTI: "com.adobe.pdf",
       });
     } else {
-      showToast("PDF saved to: " + uri, "info");
+      showToast("PDF saved to: " + shareUri, "info");
     }
   } catch (e: any) {
     showToast(e?.message || "Could not export PDF", "error");

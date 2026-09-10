@@ -992,7 +992,10 @@ export default function CustomerDetailScreen() {
     if (exportingPdf) return;
     setExportingPdf(true);
     try {
-      await exportHtmlAsPdf(buildLedgerHtml());
+      await exportHtmlAsPdf(
+        buildLedgerHtml(),
+        `${customer!.name} Statement ${dayjs().format("DD MMM YYYY")}`,
+      );
     } finally {
       setExportingPdf(false);
     }

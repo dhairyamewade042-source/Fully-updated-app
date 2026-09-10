@@ -92,3 +92,9 @@ Redesigned ONLY `buildLedgerHtml()` in `app/customer/[id].tsx` (export mechanism
 - Required examples now exact: Shabbir→शब्बीर, Imran→इमरान, Ramesh→रमेश, Arif→आरिफ, Salman→सलमान, Mohd→मोहम्मद.
 - Only customer names change in the Hindi PDF; all other text (headings, table headers, Paid/Partial/Unpaid, dates, amounts, GARLIC HUB name/phone/address) stays English. English PDF unchanged.
 - Verified by testing agent (iteration_10.json, 100%): 6 exact Devanagari names present, no Latin names in Hindi tbody, rest English, English PDF regression OK, 0 errors.
+
+## Update — 10 Jun 2026 (Dashboard Performance Graph + PDF filenames)
+- Added interactive dual-line chart (Sales ₹ + Quantity kg) to dashboard via new `src/components/PerformanceChart.tsx` (react-native-svg, works in Expo Go + web).
+- Period filters: 1D | 7D | 1M | 3M | 6M | 1Y | All with adaptive grouping (per-sale/time, daily, weekly, monthly, yearly). Totals for the selected period shown above graph; tap any point → tooltip (date/time, sales ₹, qty kg). Aggregation in `app/(tabs)/index.tsx` `buildSeries`.
+- PDF filenames: `exportHtmlAsPdf(html, fileName)` now sets web `<title>` and renames native file. Today's report → "Sales Report <DD MMM YYYY>"; customer ledger → "<Customer> Statement <DD MMM YYYY>".
+- No existing functionality changed; `tsc --noEmit` clean; verified via live preview.
