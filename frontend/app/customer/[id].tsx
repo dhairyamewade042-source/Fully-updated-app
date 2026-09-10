@@ -342,6 +342,23 @@ export default function CustomerDetailScreen() {
     [customer, customerPayments],
   );
 
+  // Custom date range for the exported statement (defaults to full history).
+  const [fromDate, setFromDate] = useState<string>(() => dayjs().format("YYYY-MM-DD"));
+  const [toDate, setToDate] = useState<string>(() => dayjs().format("YYYY-MM-DD"));
+  const rangeInit = React.useRef(false);
+  React.useEffect(() => {
+    if (!customer || rangeInit.current) return;
+    const ds = [
+      ...bills.map((b) => dayjs(b.date).format("YYYY-MM-DD")),
+      ...payments.map((p) => dayjs(p.date).format("YYYY-MM-DD")),
+    ].sort();
+    if (ds.length) {
+      setFromDate(ds[0]);
+      setToDate(dayjs().format("YYYY-MM-DD"));
+    }
+    rangeInit.current = true;
+  }, [customer, bills, payments]);
+
   if (!customer) {
     return (
       <View style={{ flex: 1, backgroundColor: theme.surface }}>
@@ -427,34 +444,50 @@ export default function CustomerDetailScreen() {
         String(a.created).localeCompare(String(b.created)),
     );
 
-    // ---- Running balance + totals (nothing hard-coded) ----
-    const openingBalance = 0; // statement covers full history
-    let bal = openingBalance;
+    // ---- Custom date-range window (inclusive). Empty bound = unbounded. ----
+    const from = fromDate || "";
+    const to = toDate || "";
+    const beforeFrom = (d: string) => (from ? ymd(d) < from : false);
+    const afterTo = (d: string) => (to ? ymd(d) > to : false);
+
+    // Opening balance brought forward = net of everything before "from".
+    let opening = 0;
+    let hasPrior = false;
+    events.forEach((e) => {
+      if (beforeFrom(e.date)) {
+        opening = round2(opening + e.debit - e.credit);
+        hasPrior = true;
+      }
+    });
+
+    const shown = events.filter((e) => !beforeFrom(e.date) && !afterTo(e.date));
+
+    // ---- Running balance + totals over the shown period ----
+    let bal = opening;
     let totalDebit = 0;
     let totalCredit = 0;
-    const ledgerRows = events.map((e) => {
+    const ledgerRows = shown.map((e) => {
       bal = round2(bal + e.debit - e.credit);
       totalDebit = round2(totalDebit + e.debit);
       totalCredit = round2(totalCredit + e.credit);
       return { ...e, balance: bal };
     });
-    totalDebit = round2(totalDebit);
-    totalCredit = round2(totalCredit);
-    const closingBalance = round2(openingBalance + totalDebit - totalCredit);
+    const closingBalance = round2(opening + totalDebit - totalCredit);
 
     // ---- Dates / period ----
     const now = dayjs();
     const statementDate = now.format("DD MMM YYYY");
     const generatedOn = now.format("DD MMM YYYY, hh:mm A");
-    const firstDate = events.length ? events[0].date : now.toISOString();
-    const lastDate = events.length ? events[events.length - 1].date : now.toISOString();
-    const statementPeriod = `${fmtDate(firstDate)} — ${fmtDate(lastDate)}`;
+    const periodStart = from || (shown.length ? ymd(shown[0].date) : ymd(now.toISOString()));
+    const periodEnd =
+      to || (shown.length ? ymd(shown[shown.length - 1].date) : ymd(now.toISOString()));
+    const statementPeriod = `${fmtDate(periodStart)} — ${fmtDate(periodEnd)}`;
 
     // ---- Formatting helpers ----
-    const drcr = (n: number) => (n > 0.0001 ? "Dr." : n < -0.0001 ? "Cr." : "—");
+    const drcr = (n: number) => (n > 0.0001 ? "Dr." : n < -0.0001 ? "Cr." : "");
     const balCell = (n: number) =>
       Math.abs(n) <= 0.0001 ? money(0, currency) : `${money(Math.abs(n), currency)} ${drcr(n)}`;
-    const amt = (n: number) => (n > 0.0001 ? money(n, currency) : "—");
+    const balCls = (n: number) => (n > 0.0001 ? "dr" : n < -0.0001 ? "cr" : "");
 
     const garlicLogo = `
       <svg viewBox="0 0 64 64" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -465,33 +498,81 @@ export default function CustomerDetailScreen() {
         <path d="M40 20 C43 33 43 47 38 57" stroke="#1B5E20" stroke-width="1.4" fill="none"/>
       </svg>`;
 
-    const balClass = (n: number) =>
-      n > 0.0001 ? "bal-dr" : n < -0.0001 ? "bal-cr" : "";
+    // ---- Ledger table (Date | Quantity | Debit | Credit | Balance) ----
+    const openingRowHtml = hasPrior
+      ? `<tr class="op">
+           <td>${fmtDate(periodStart)}</td>
+           <td class="c">Opening</td>
+           <td class="r mut">—</td>
+           <td class="r mut">—</td>
+           <td class="bal ${balCls(opening)}">${balCell(opening)}</td>
+         </tr>`
+      : "";
 
     const rowsHtml =
       ledgerRows.length === 0
-        ? `<tr><td colspan="6" class="empty">No transactions in this period.</td></tr>`
+        ? hasPrior
+          ? ""
+          : `<tr><td class="empty" colspan="5">No transactions in this period.</td></tr>`
         : ledgerRows
-            .map((r) => {
-              const isCredit = r.credit > 0.0001;
-              const debitCell =
-                r.debit > 0.0001
-                  ? `<td class="num c-debit">${money(r.debit, currency)}</td>`
-                  : `<td class="num muted">—</td>`;
-              const creditCell =
-                r.credit > 0.0001
-                  ? `<td class="num c-credit">${money(r.credit, currency)}</td>`
-                  : `<td class="num muted">—</td>`;
-              return `<tr>
-                <td class="c-date">${fmtDate(r.date)}</td>
-                <td class="c-qty">${r.qty ? escapeHtml(r.qty) : "—"}</td>
-                ${debitCell}
-                ${creditCell}
-                <td class="c-drcr ${isCredit ? "cc-cr" : "cc-dr"}">${isCredit ? "Cr." : "Dr."}</td>
-                <td class="num c-bal ${balClass(r.balance)}">${balCell(r.balance)}</td>
-              </tr>`;
-            })
+            .map(
+              (r) => `<tr>
+                <td>${fmtDate(r.date)}</td>
+                <td class="c">${r.qty ? escapeHtml(r.qty) : "—"}</td>
+                <td class="r ${r.debit > 0.0001 ? "dr" : "mut"}">${r.debit > 0.0001 ? money(r.debit, currency) : "—"}</td>
+                <td class="r ${r.credit > 0.0001 ? "cr" : "mut"}">${r.credit > 0.0001 ? money(r.credit, currency) : "—"}</td>
+                <td class="bal ${balCls(r.balance)}">${balCell(r.balance)}</td>
+              </tr>`,
+            )
             .join("");
+
+    const totalsRowHtml =
+      ledgerRows.length === 0
+        ? ""
+        : `<tr class="tot">
+             <td>TOTAL</td>
+             <td class="c"></td>
+             <td class="r dr">${money(totalDebit, currency)}</td>
+             <td class="r cr">${money(totalCredit, currency)}</td>
+             <td class="bal ${balCls(closingBalance)}">${balCell(closingBalance)}</td>
+           </tr>`;
+
+    const tableHtml = `
+      <style>
+        .gh-ledger { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:6px; }
+        .gh-ledger th, .gh-ledger td { border:1px solid #B9C9BD; padding:7px 8px; font-size:12px; line-height:1.3; vertical-align:middle; word-break:break-word; }
+        .gh-ledger thead th { background:#1B5E20; color:#fff; text-transform:uppercase; letter-spacing:.3px; font-size:11px; font-weight:800; }
+        .gh-ledger .r { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+        .gh-ledger .c { text-align:center; }
+        .gh-ledger tbody tr:nth-child(even) td { background:#F5F8F5; }
+        .gh-ledger .dr { color:#B3261E; font-weight:700; }
+        .gh-ledger .cr { color:#1B5E20; font-weight:700; }
+        .gh-ledger .mut { color:#8A968C; }
+        .gh-ledger .bal { text-align:right; white-space:nowrap; font-weight:800; font-variant-numeric:tabular-nums; }
+        .gh-ledger .op td { background:#F0F5F0; font-style:italic; }
+        .gh-ledger .tot td { background:#EAF3EC; font-weight:800; border-top:2px solid #1B5E20; }
+        .gh-ledger .empty { text-align:center; font-style:italic; color:#66736A; padding:16px; }
+        .gh-ledger tr { page-break-inside:avoid; }
+      </style>
+      <table class="gh-ledger">
+        <colgroup>
+          <col style="width:17%"/><col style="width:18%"/><col style="width:20%"/><col style="width:20%"/><col style="width:25%"/>
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th class="c">Quantity</th>
+            <th class="r">Debit</th>
+            <th class="r">Credit</th>
+            <th class="r">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${openingRowHtml}
+          ${rowsHtml}
+          ${totalsRowHtml}
+        </tbody>
+      </table>`;
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -880,13 +961,15 @@ export default function CustomerDetailScreen() {
             <div class="block">
               <div class="bhead">Customer Details</div>
               <div class="bbody">
-                <div class="kv"><span class="k">Name</span><span class="v">${escapeHtml(customer!.name)}</span></div>
+                <div class="kv"><span class="k">Name</span><span class="v">${escapeHtml(customer!.name)}${customer!.hindiName ? ` (${escapeHtml(customer!.hindiName)})` : ""}</span></div>
                 <div class="kv"><span class="k">Phone</span><span class="v">${customer!.phone ? escapeHtml(customer!.phone) : "—"}</span></div>
                 <div class="kv"><span class="k">Statement Date</span><span class="v">${statementDate}</span></div>
                 <div class="kv"><span class="k">Statement Period</span><span class="v">${statementPeriod}</span></div>
               </div>
             </div>
-            
+            <div class="block summary">
+              <div class="bhead">Summary</div>
+              <div class="bbody">
                 <div class="kv"><span class="k">Total Debit</span><span class="v dr">${money(totalDebit, currency)}</span></div>
                 <div class="kv"><span class="k">Total Credit</span><span class="v cr">${money(totalCredit, currency)}</span></div>
                 <div class="kv"><span class="k">Closing Balance</span><span class="v ${closingBalance > 0.0001 ? "dr" : closingBalance < -0.0001 ? "cr" : ""}">${balCell(closingBalance)}</span></div>
@@ -894,20 +977,7 @@ export default function CustomerDetailScreen() {
             </div>
           </div>
 
-              ${rowsHtml}
-              ${
-                ledgerRows.length === 0
-                  ? ""
-                  : `<tr class="totals">
-                      <td colspan="2">TOTAL</td>
-                      <td class="num c-debit">${money(totalDebit, currency)}</td>
-                      <td class="num c-credit">${money(totalCredit, currency)}</td>
-                      <td class="c-drcr ${closingBalance > 0.0001 ? "cc-dr" : closingBalance < -0.0001 ? "cc-cr" : ""}">${drcr(closingBalance)}</td>
-                      <td class="num c-bal ${closingBalance > 0.0001 ? "bal-dr" : closingBalance < -0.0001 ? "bal-cr" : ""}">${balCell(closingBalance)}</td>
-                    </tr>`
-              }
-            </tbody>
-          </table>
+          ${tableHtml}
 
           <div class="foot">
             <div class="biz">${escapeHtml(BIZ.name)} | ${escapeHtml(BIZ.phone)} | ${escapeHtml(BIZ.address)}</div>
@@ -1129,6 +1199,17 @@ export default function CustomerDetailScreen() {
             icon={<Ionicons name="add" size={18} color={theme.onBrandTertiary} />}
             style={{ flex: pending > 0 ? undefined : 1, paddingHorizontal: spacing.lg }}
           />
+        </View>
+
+        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <Label>From</Label>
+            <DateField label="" value={fromDate} onChange={setFromDate} testID="statement-from-date" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Label>To</Label>
+            <DateField label="" value={toDate} onChange={setToDate} testID="statement-to-date" />
+          </View>
         </View>
 
         <Button

@@ -84,6 +84,7 @@ export const Field = ({
           onSubmitEditing={onSubmitEditing}
           returnKeyType={returnKeyType}
           style={[
+            { outlineStyle: "none", outlineWidth: 0 } as any,
             {
               flex: 1,
               color: theme.onSurface,
