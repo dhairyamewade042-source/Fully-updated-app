@@ -91,7 +91,7 @@ export interface AppData {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  businessName: "My Garlic Business",
+  businessName: "White Garlic",
   currency: "₹",
   darkMode: false,
 };

@@ -388,7 +388,7 @@ export default function CustomerDetailScreen() {
   const buildLedgerHtml = (): string => {
     // ---- Business identity (letterhead) ----
     const BIZ = {
-      name: "GARLIC HUB",
+      name: "WHITE GARLIC",
       tagline: "Garlic Supplier & Packaging",
       phone: "+91 7509730965",
       address: "Bercha Road, Dusherra Maidan, Shajapur",
@@ -965,14 +965,6 @@ export default function CustomerDetailScreen() {
                 <div class="kv"><span class="k">Phone</span><span class="v">${customer!.phone ? escapeHtml(customer!.phone) : "—"}</span></div>
                 <div class="kv"><span class="k">Statement Date</span><span class="v">${statementDate}</span></div>
                 <div class="kv"><span class="k">Statement Period</span><span class="v">${statementPeriod}</span></div>
-              </div>
-            </div>
-            <div class="block summary">
-              <div class="bhead">Summary</div>
-              <div class="bbody">
-                <div class="kv"><span class="k">Total Debit</span><span class="v dr">${money(totalDebit, currency)}</span></div>
-                <div class="kv"><span class="k">Total Credit</span><span class="v cr">${money(totalCredit, currency)}</span></div>
-                <div class="kv"><span class="k">Closing Balance</span><span class="v ${closingBalance > 0.0001 ? "dr" : closingBalance < -0.0001 ? "cr" : ""}">${balCell(closingBalance)}</span></div>
               </div>
             </div>
           </div>

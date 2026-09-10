@@ -75,13 +75,6 @@ export default function MoreScreen() {
           onPress={() => router.push("/customer")}
         />
         <Row
-          testID="more-history"
-          icon={<MaterialCommunityIcons name="history" size={22} color={theme.brandPrimary} />}
-          label="Sales History"
-          desc="Browse and edit past days' data"
-          onPress={() => router.push("/history")}
-        />
-        <Row
           testID="more-purchase"
           icon={<MaterialCommunityIcons name="file-image-outline" size={22} color={theme.brandPrimary} />}
           label="Purchase Bills"

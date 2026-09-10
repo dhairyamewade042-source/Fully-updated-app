@@ -24,7 +24,7 @@ const ymd = (s: string) => dayjs(s).format("YYYY-MM-DD");
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const BIZ = {
-  name: "GARLIC HUB",
+  name: "WHITE GARLIC",
   phone: "+91 7509730965",
   address: "Bercha Road, Dusherra Maidan, Shajapur",
 };

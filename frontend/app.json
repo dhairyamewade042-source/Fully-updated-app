@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Garlic Hub",
+    "name": "White Garlic",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,7 +15,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/garlic-adaptive.png",
-        "backgroundColor": "#F4EFE8"
+        "backgroundColor": "#F9F3EE"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.emergent.garlicbiz.w6hnht",
@@ -36,9 +36,9 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/garlic-splash.png",
-          "imageWidth": 290,
+          "imageWidth": 220,
           "resizeMode": "contain",
-          "backgroundColor": "#F4EFE8"
+          "backgroundColor": "#F9F3EE"
         }
       ],
       [

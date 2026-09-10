@@ -485,11 +485,34 @@ export default function DashboardScreen() {
         <Card style={{ marginTop: spacing.xl }} testID="performance-chart-card">
           <H2 style={{ marginBottom: spacing.md }}>Performance</H2>
 
+          <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.xs }}>
+            <View style={{ flex: 1 }}>
+              <Label>Total Sales</Label>
+              <Text
+                testID="chart-total-sales"
+                style={{ color: theme.onSurface, fontSize: fontSize.xl, fontWeight: "800" }}
+              >
+                {money(series.totalSales, currency)}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Label>Total Quantity</Label>
+              <Text
+                testID="chart-total-qty"
+                style={{ color: theme.onSurface, fontSize: fontSize.xl, fontWeight: "800" }}
+              >
+                {kg(series.totalQty)}
+              </Text>
+            </View>
+          </View>
+
+          <PerformanceChart points={series.points} currency={currency} />
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: spacing.sm, paddingRight: spacing.sm }}
-            style={{ marginBottom: spacing.md, marginHorizontal: -spacing.xs }}
+            style={{ marginTop: spacing.md, marginHorizontal: -spacing.xs }}
           >
             {PERIODS.map((p) => {
               const activeP = p === period;
@@ -520,29 +543,6 @@ export default function DashboardScreen() {
               );
             })}
           </ScrollView>
-
-          <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.xs }}>
-            <View style={{ flex: 1 }}>
-              <Label>Total Sales</Label>
-              <Text
-                testID="chart-total-sales"
-                style={{ color: theme.onSurface, fontSize: fontSize.xl, fontWeight: "800" }}
-              >
-                {money(series.totalSales, currency)}
-              </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Label>Total Quantity</Label>
-              <Text
-                testID="chart-total-qty"
-                style={{ color: theme.onSurface, fontSize: fontSize.xl, fontWeight: "800" }}
-              >
-                {kg(series.totalQty)}
-              </Text>
-            </View>
-          </View>
-
-          <PerformanceChart points={series.points} currency={currency} />
         </Card>
 
         {/* You Owe Traders */}
